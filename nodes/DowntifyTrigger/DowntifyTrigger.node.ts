@@ -1,6 +1,7 @@
 import {
 	NodeConnectionTypes,
 	NodeOperationError,
+	type ICredentialDataDecryptedObject,
 	type IDataObject,
 	type INodeExecutionData,
 	type INodeType,
@@ -19,8 +20,9 @@ import {
 	songArtist,
 	songTitle,
 } from '../Downtify/shared/queue';
+import { signInIdentity } from '../Downtify/shared/auth';
 import { MAX_STATE_ENTRIES, redactString, stateKey, validateInteger } from '../Downtify/shared/security';
-import { DowntifyClient } from '../Downtify/shared/transport';
+import { CREDENTIAL_NAME, DowntifyClient, type SignInFailure } from '../Downtify/shared/transport';
 
 export { stateKey };
 
@@ -34,6 +36,56 @@ interface TriggerState {
 	seen?: string[];
 	/** Hashed album keys that had unfinished jobs at the last poll. */
 	activeAlbums?: string[];
+	/** Sign-ins paused after a 401 or 429 (Username & Password). */
+	signInPause?: SignInPause;
+}
+
+/** Hashes only: never the password. */
+interface SignInPause {
+	status: 401 | 429;
+	account: string;
+	session: string;
+	/** 429: when Downtify accepts sign-ins again (ISO date). */
+	until?: string;
+	/** The error was already reported for this status and identity. */
+	reported: boolean;
+}
+
+/** Used when a 429 has no Retry-After header. */
+const DEFAULT_SIGN_IN_WAIT_SECONDS = 60;
+
+/** Upper bound for a Retry-After wait. */
+const MAX_SIGN_IN_WAIT_SECONDS = 24 * 60 * 60;
+
+/**
+ * A wrong password (401) is not retried until the credential changes; a 429 waits as long as
+ * Downtify asks. Otherwise every poll would sign in again and keep Downtify's per-address
+ * sign-in lockout active, also for other users.
+ */
+function signInPaused(pause: SignInPause, raw: ICredentialDataDecryptedObject, now: number): boolean {
+	const identity = signInIdentity(raw);
+	if (!identity || identity.account !== pause.account) return false;
+	if (pause.status === 401) return identity.session === pause.session;
+	return pause.until !== undefined && now < Date.parse(pause.until);
+}
+
+function pauseAfter(failure: SignInFailure, raw: ICredentialDataDecryptedObject, previous: SignInPause | undefined, now: number): SignInPause | undefined {
+	const identity = signInIdentity(raw);
+	if (!identity || (failure.signInStatus !== 401 && failure.signInStatus !== 429)) return undefined;
+	const status = failure.signInStatus;
+	const wait = Math.min(failure.retryAfterSeconds ?? DEFAULT_SIGN_IN_WAIT_SECONDS, MAX_SIGN_IN_WAIT_SECONDS);
+	const reported =
+		previous !== undefined &&
+		previous.status === status &&
+		previous.account === identity.account &&
+		previous.session === identity.session;
+	return {
+		status,
+		account: identity.account,
+		session: identity.session,
+		until: status === 429 ? new Date(now + wait * 1000).toISOString() : undefined,
+		reported,
+	};
 }
 
 interface Snapshot {
@@ -170,6 +222,10 @@ export class DowntifyTrigger implements INodeType {
 			for (const key of Object.keys(state)) delete (state as IDataObject)[key];
 			state.event = event;
 		}
+		if (!manual && state.signInPause) {
+			const raw = await this.getCredentials(CREDENTIAL_NAME);
+			if (signInPaused(state.signInPause, raw, Date.now())) return null;
+		}
 		const firstRun = !state.initialized;
 		if (firstRun && !manual) state.activatedAt = new Date().toISOString();
 		let client: DowntifyClient | undefined;
@@ -191,6 +247,16 @@ export class DowntifyTrigger implements INodeType {
 					throw new NodeOperationError(this.getNode(), `Unknown event "${String(event)}"`);
 			}
 		} catch (error) {
+			const failure = client?.lastSignInFailure;
+			if (!manual && failure) {
+				const raw = await this.getCredentials(CREDENTIAL_NAME);
+				const pause = pauseAfter(failure, raw, state.signInPause, Date.now());
+				if (pause) {
+					state.signInPause = { ...pause, reported: true };
+					// Reported once: a later failure for the same status and credential stays silent
+					if (pause.reported) return null;
+				}
+			}
 			const e = error as { message?: string; description?: string };
 			const redact = (s: string) => (client ? client.redact(s) : redactString(s));
 			throw new NodeOperationError(this.getNode(), redact(e?.message ?? 'Polling failed'), {
@@ -198,6 +264,7 @@ export class DowntifyTrigger implements INodeType {
 			});
 		}
 
+		if (!manual) delete state.signInPause;
 		if (manual) {
 			// Test mode: a real sample built from current data; the stored state is not changed
 			const items = snapshot.items.length ? snapshot.items : snapshot.sample ? [snapshot.sample] : [];

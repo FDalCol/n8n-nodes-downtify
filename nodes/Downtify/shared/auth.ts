@@ -36,11 +36,44 @@ export class DowntifySignInError extends Error {
 
 	readonly downtifySignIn = true;
 
+	/** HTTP status of the sign-in answer. Not named statusCode: NodeApiError would replace the message. */
+	signInStatus?: number;
+
+	/** 429: seconds Downtify asks to wait (Retry-After). */
+	retryAfterSeconds?: number;
+
 	constructor(message: string, description?: string) {
 		super(message);
 		this.name = 'DowntifySignInError';
 		this.description = description;
 	}
+}
+
+/** Retry-After as seconds: a number of seconds or an HTTP date. */
+export function parseRetryAfter(value: string, now = Date.now()): number | undefined {
+	const text = value.trim();
+	if (/^\d{1,9}$/.test(text)) return Number(text);
+	const date = Date.parse(text);
+	return Number.isNaN(date) ? undefined : Math.max(0, Math.ceil((date - now) / 1000));
+}
+
+/**
+ * Who the credential signs in as, without the password: `account` hashes Base URL and username;
+ * `session` hashes the stored token fingerprint, which changes when n8n stores a new token (for
+ * example after the password was corrected and the credential saved). Undefined for Device Token.
+ */
+export function signInIdentity(raw: ICredentialDataDecryptedObject): { account: string; session: string } | undefined {
+	if (authMode(raw) !== 'password') return undefined;
+	let baseUrl: string;
+	try {
+		baseUrl = normalizeBaseUrl(raw.baseUrl);
+	} catch {
+		baseUrl = String(raw.baseUrl ?? '');
+	}
+	return {
+		account: stateKey(`${baseUrl}\n${username(raw)}`),
+		session: stateKey(String(raw.sessionTokenFingerprint ?? '')),
+	};
 }
 
 /** The sign-in error carried by `error` or by its cause (n8n wraps it in a NodeApiError). */
@@ -163,6 +196,13 @@ async function call(
 }
 
 function signInFailure(res: SignInResponse, secrets: string[]): DowntifySignInError {
+	const error = signInFailureFor(res, secrets);
+	error.signInStatus = res.statusCode;
+	if (res.statusCode === 429) error.retryAfterSeconds = parseRetryAfter(res.retryAfter);
+	return error;
+}
+
+function signInFailureFor(res: SignInResponse, secrets: string[]): DowntifySignInError {
 	const detail = redactString(errorDetail(res.data), secrets).slice(0, 500);
 	const suffix = detail ? `: ${detail}` : '';
 	switch (res.statusCode) {

@@ -42,6 +42,13 @@ export interface DowntifyCredentials {
 	password: string;
 }
 
+export interface SignInFailure {
+	message: string;
+	description?: string;
+	signInStatus?: number;
+	retryAfterSeconds?: number;
+}
+
 export interface DowntifyResponse<T = unknown> {
 	statusCode: number;
 	data: T;
@@ -81,7 +88,7 @@ export class DowntifyClient {
 	 * A failed sign-in is not stored by n8n, which would sign in again before every request.
 	 * Remembering it avoids one attempt per item and Downtify's sign-in lockout for the address.
 	 */
-	private signInFailure?: { message: string; description?: string };
+	private signInFailure?: SignInFailure;
 
 	constructor(
 		private readonly ctx: DowntifyContext,
@@ -113,9 +120,19 @@ export class DowntifyClient {
 		return this.ctx.getNode();
 	}
 
-	private failSignIn(signIn: { message: string; description?: string }): NodeOperationError {
-		this.signInFailure = { message: signIn.message, description: signIn.description };
+	private failSignIn(signIn: SignInFailure): NodeOperationError {
+		this.signInFailure = {
+			message: signIn.message,
+			description: signIn.description,
+			signInStatus: signIn.signInStatus,
+			retryAfterSeconds: signIn.retryAfterSeconds,
+		};
 		return this.error(signIn.message, signIn.description);
+	}
+
+	/** The sign-in failure of this execution, if any (used by the trigger to pause sign-ins). */
+	get lastSignInFailure(): SignInFailure | undefined {
+		return this.signInFailure;
 	}
 
 	redact(text: string): string {

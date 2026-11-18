@@ -180,6 +180,15 @@ Events are deduplicated by job ID and status. When a track is queued again, a ne
 when it finishes. The trigger only sees what is in Downtify's queue and keeps up to 10,000
 entries.
 
+With Username & Password, a failed sign-in pauses the trigger's sign-ins, so the polls do not
+keep Downtify's sign-in lockout active. The error is reported once.
+
+- 401 (wrong username or password): no new sign-in until the credential changes. Save the
+  corrected credential: its test stores a new token and polling resumes. Changing the Base URL
+  or username also resumes it. The trigger keeps only hashes of the Base URL and username, never
+  the password.
+- 429 (too many attempts): the trigger waits as long as Downtify asks (Retry-After).
+
 Example item for Batch Finished:
 
 ```json
@@ -198,8 +207,11 @@ Example item for Batch Finished:
   way.
 - The password is sent only in the JSON body of `POST /api/auth/token`. It never appears in a
   URL, output, error or log. Sign-in errors are rebuilt without the original request.
-- No redirect is followed. Every request has a timeout and a response size limit (64 MiB),
-  enforced by n8n's HTTP client without extra timers.
+- No redirect is followed.
+- Requests time out after 60 s without data: 180 s for link resolution, 30 s for sign-in, and
+  the Timeout setting for Download Episode. The limit counts time without data, not the total
+  duration: a server that keeps sending data slowly is stopped only by cancelling the execution.
+- Responses over 64 MiB are aborted (1 MiB for sign-in and the credential test).
 - Values used in paths (track, show and episode IDs) are validated and encoded. Custom API Call
   refuses absolute URLs, path traversal (also percent-encoded), sign-in and pairing routes, and
   endpoints that need an admin or a browser.

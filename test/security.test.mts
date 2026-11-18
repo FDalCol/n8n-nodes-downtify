@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { parseRetryAfter } from '../nodes/Downtify/shared/auth';
 import { baseTitle, artistCandidates } from '../nodes/Downtify/shared/library';
 import { isDeviceRoute, redactString, redactValue, routeScope, validateApiPath } from '../nodes/Downtify/shared/security';
 import { FakeDowntify, TOKEN, Trap } from './helpers/fakeDowntify.mts';
@@ -295,5 +296,13 @@ describe('hardening from the independent review', () => {
 		server.on('GET', '/api/queue/state', () => ({ status: 500, json: { detail: 'x'.repeat(100_000) } }));
 		const err = await runNodeError({ credentials: credentials(server), params: state });
 		expect(err.message.length).toBeLessThan(2100);
+	});
+});
+
+describe('Retry-After', () => {
+	it('accepts seconds or an HTTP date', () => {
+		expect(parseRetryAfter('42')).toBe(42);
+		expect(parseRetryAfter(new Date(Date.now() + 90_000).toUTCString())).toBeGreaterThanOrEqual(89);
+		expect(parseRetryAfter('soon')).toBeUndefined();
 	});
 });

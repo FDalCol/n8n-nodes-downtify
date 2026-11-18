@@ -294,3 +294,72 @@ describe('Username & Password: failed sign-in', () => {
 		expect(signIns()).toHaveLength(1);
 	});
 });
+
+describe('Downtify Trigger: paused sign-ins', () => {
+	const watch = { event: 'downloadFinished' };
+	const pollWith = (stored: ICredentialDataDecryptedObject, staticData: IDataObject, mode: 'trigger' | 'manual' = 'trigger') =>
+		poll({ credentials: stored, params: watch, staticData, mode });
+
+	it('401: reports once, then does not sign in again until the credential changes', async () => {
+		const stored = passwordCredentials(server, { password: 'wrong-password-123' });
+		const data: IDataObject = {};
+		await expect(pollWith(stored, data)).rejects.toThrow(/rejected the username or password \(401\)/);
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(signIns()).toHaveLength(1);
+		expect(JSON.stringify(data)).not.toContain('wrong-password-123');
+
+		// Test mode still tries, and reports the error
+		await expect(pollWith(stored, data, 'manual')).rejects.toThrow(/401/);
+		expect(signIns()).toHaveLength(2);
+
+		// Another user: a new credential, tried and reported again
+		stored.username = 'someone-else';
+		await expect(pollWith(stored, data)).rejects.toThrow(/401/);
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(signIns()).toHaveLength(3);
+
+		// Password corrected and saved: n8n's test stores a new token, so polling resumes
+		stored.username = USERNAME;
+		stored.password = PASSWORD;
+		expect((await runCredentialTest(stored)).status).toBe('OK');
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(data.signInPause).toBeUndefined();
+		expect(data.initialized).toBe(true);
+	});
+
+	it('429: waits as long as Downtify asks, retries silently, then resumes', async () => {
+		server.on('POST', '/api/auth/token', () => ({ status: 429, json: { detail: 'Too many attempts' }, headers: { 'Retry-After': '42' } }));
+		const stored = passwordCredentials(server);
+		const data: IDataObject = {};
+		const before = Date.now();
+		await expect(pollWith(stored, data)).rejects.toThrow(/Too many sign-in attempts \(429\)/);
+		const pause = data.signInPause as { status: number; until: string };
+		expect(pause.status).toBe(429);
+		expect(Date.parse(pause.until) - before).toBeGreaterThanOrEqual(41_000);
+		expect(Date.parse(pause.until) - before).toBeLessThan(44_000);
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(signIns()).toHaveLength(1);
+
+		// The wait is over and Downtify still answers 429: retried, but not reported again
+		pause.until = new Date(Date.now() - 1000).toISOString();
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(signIns()).toHaveLength(2);
+
+		// Sign-in works again
+		server.reset();
+		(data.signInPause as { until: string }).until = new Date(Date.now() - 1000).toISOString();
+		expect(await pollWith(stored, data)).toBeNull();
+		expect(signIns()).toHaveLength(1);
+		expect(data.signInPause).toBeUndefined();
+	});
+
+	it('other errors are not paused', async () => {
+		server.on('GET', '/api/queue', () => ({ status: 500, json: { detail: 'boom' } }));
+		const stored = passwordCredentials(server);
+		const data: IDataObject = {};
+		await expect(pollWith(stored, data)).rejects.toThrow(/500/);
+		await expect(pollWith(stored, data)).rejects.toThrow(/500/);
+		expect(data.signInPause).toBeUndefined();
+	});
+});
