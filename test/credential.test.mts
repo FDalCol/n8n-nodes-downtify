@@ -46,6 +46,7 @@ describe('credential', () => {
 		expect(req.url).toBe('/api/me');
 		expect(req.method).toBe('GET');
 		expect(req.disableFollowRedirect).toBe(true);
+		expect(req.maxResponseBodyBytes).toBe(1024 * 1024);
 		expect(evalCredentialExpression(req.baseURL, { baseUrl: 'http://downtify.local:8000//' })).toBe('http://downtify.local:8000');
 		expect(evalCredentialExpression(req.baseURL, { baseUrl: 'https://music.example/downtify' })).toBe('https://music.example/downtify');
 		for (const bad of ['ftp://x', 'http://u:p@x', 'http://x/?a=1', 'http://x/#f', 'javascript:alert(1)', '']) {

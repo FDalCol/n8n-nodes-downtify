@@ -72,7 +72,7 @@ export function describeNetworkError(error: unknown, includeRawMessage = true): 
 export function errorDetail(body: unknown): string {
 	if (!body || typeof body !== 'object') return '';
 	const detail = (body as IDataObject).detail;
-	if (typeof detail === 'string') return detail.trim();
+	if (typeof detail === 'string') return detail.trim().slice(0, 2000);
 	if (Array.isArray(detail)) {
 		return detail
 			.map((d) => {

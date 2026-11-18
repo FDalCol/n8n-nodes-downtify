@@ -12,8 +12,10 @@ export const customApiCallHandlers: ResourceHandlers = {
 		const method = ctx.str('method', 'GET').toUpperCase() as DowntifyMethod;
 		if (!METHODS.includes(method)) throw ctx.client.error('Invalid method');
 		const path = ctx.guard(() => validateApiPath(ctx.str('path')));
-		if (!isDeviceRoute(method, path)) {
-			const scope = routeScope(method, path);
+		// Downtify matches its routes on the decoded path: both forms must be allowed
+		const decoded = decodeURIComponent(path);
+		if (!isDeviceRoute(method, path) || !isDeviceRoute(method, decoded)) {
+			const scope = isDeviceRoute(method, path) ? routeScope(method, decoded) : routeScope(method, path);
 			const reason =
 				scope === 'signIn'
 					? 'sign-in and pairing are never done by this node (each sign-in creates a new device)'

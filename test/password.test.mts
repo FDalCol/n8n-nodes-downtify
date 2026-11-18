@@ -285,3 +285,12 @@ describe('credential test (Test button)', () => {
 		expectNoPasswordLeak();
 	});
 });
+
+describe('Username & Password: failed sign-in', () => {
+	it('a failed sign-in is tried once per execution, not once per item', async () => {
+		const stored = passwordCredentials(server, { password: 'wrong-password-123' });
+		const items = await runNode({ credentials: stored, params: [getMe, getMe, getMe], continueOnFail: true });
+		expect(items.map((i) => String(i.json.error))).toEqual(Array(3).fill('Downtify rejected the username or password (401): Wrong username or password'));
+		expect(signIns()).toHaveLength(1);
+	});
+});

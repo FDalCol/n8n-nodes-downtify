@@ -77,6 +77,12 @@ export class DowntifyClient {
 	/** Username & Password: the session was renewed once in this execution. */
 	private renewed = false;
 
+	/**
+	 * A failed sign-in is not stored by n8n, which would sign in again before every request.
+	 * Remembering it avoids one attempt per item and Downtify's sign-in lockout for the address.
+	 */
+	private signInFailure?: { message: string; description?: string };
+
 	constructor(
 		private readonly ctx: DowntifyContext,
 		public credentials: DowntifyCredentials,
@@ -105,6 +111,11 @@ export class DowntifyClient {
 
 	get node(): INode {
 		return this.ctx.getNode();
+	}
+
+	private failSignIn(signIn: { message: string; description?: string }): NodeOperationError {
+		this.signInFailure = { message: signIn.message, description: signIn.description };
+		return this.error(signIn.message, signIn.description);
 	}
 
 	redact(text: string): string {
@@ -136,6 +147,7 @@ export class DowntifyClient {
 	): Promise<DowntifyResponse<T>> {
 		this.assertInternalPath(path);
 		this.throwIfCancelled();
+		if (this.signInFailure) throw this.error(this.signInFailure.message, this.signInFailure.description);
 		let res = await this.send(method, path, opts);
 		if (res.statusCode === 401 && this.credentials.mode === 'password' && !this.renewed) {
 			// Downtify no longer accepts the stored token (revoked, or issued for another server
@@ -170,7 +182,7 @@ export class DowntifyClient {
 			});
 		} catch (error) {
 			const signIn = findSignInError(error);
-			if (signIn) throw this.error(signIn.message, signIn.description);
+			if (signIn) throw this.failSignIn(signIn);
 			if (this.isCancelled()) throw this.error('Execution was cancelled');
 			const status = (error as { httpCode?: unknown }).httpCode;
 			if (String(status) === '401') {
@@ -246,7 +258,7 @@ export class DowntifyClient {
 			)) as typeof response;
 		} catch (error) {
 			const signIn = findSignInError(error);
-			if (signIn) throw this.error(signIn.message, signIn.description);
+			if (signIn) throw this.failSignIn(signIn);
 			const e = error as { code?: string; message?: string; cause?: { code?: string; message?: string } };
 			const detail = `${e?.code ?? ''} ${e?.cause?.code ?? ''} ${e?.message ?? ''} ${e?.cause?.message ?? ''}`;
 			if (/ERR_RESPONSE_TOO_LARGE|maximum allowed size|maxContentLength/i.test(detail)) {

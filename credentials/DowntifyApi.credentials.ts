@@ -140,6 +140,7 @@ export class DowntifyApi implements ICredentialType {
 				Accept: 'application/json',
 			},
 			disableFollowRedirect: true,
+			maxResponseBodyBytes: 1024 * 1024,
 		},
 		rules: [
 			{

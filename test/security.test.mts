@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { baseTitle, artistCandidates } from '../nodes/Downtify/shared/library';
 import { isDeviceRoute, redactString, redactValue, routeScope, validateApiPath } from '../nodes/Downtify/shared/security';
 import { FakeDowntify, TOKEN, Trap } from './helpers/fakeDowntify.mts';
 import { credentials, runNode, runNodeError, runNodeJson, sentRequests, type Params } from './helpers/harness.mts';
@@ -266,5 +267,33 @@ describe('responses', () => {
 		await gone.stop();
 		const err = await runNodeError({ credentials: credentials({ url }), params: state });
 		expect(err.message).toMatch(/Connection refused|Request to Downtify failed/);
+	});
+});
+
+describe('hardening from the independent review', () => {
+	it('Custom API Call: escaped letters cannot slip a route past the policy', async () => {
+		for (const path of ['/api/v1/librar%79/trash', '/api/v1/download-polic%79', '/api/similar/%74est', '/api/queue/paus%65']) {
+			const err = await runNodeError({ credentials: credentials(server), params: custom('GET', path) });
+			expect(err.message, path).toMatch(/Encoded|not allowed/);
+		}
+		expect(server.requests).toHaveLength(0);
+		// Escapes of other characters are still accepted
+		expect(validateApiPath('/api/v1/tracks/a%3Ab')).toBe('/api/v1/tracks/a%3Ab');
+	});
+
+	it('long whitespace runs in server titles and artists are handled in linear time', () => {
+		const evil = `a${' '.repeat(500_000)}b`;
+		const start = Date.now();
+		baseTitle(evil);
+		artistCandidates(evil);
+		expect(Date.now() - start).toBeLessThan(1000);
+		expect(baseTitle('Discovery  (Deluxe   Edition)')).toBe('discovery');
+		expect(artistCandidates('A,  B   feat. C')).toEqual(['a b feat c', 'a', 'b', 'c']);
+	});
+
+	it('caps the length of server error details', async () => {
+		server.on('GET', '/api/queue/state', () => ({ status: 500, json: { detail: 'x'.repeat(100_000) } }));
+		const err = await runNodeError({ credentials: credentials(server), params: state });
+		expect(err.message.length).toBeLessThan(2100);
 	});
 });

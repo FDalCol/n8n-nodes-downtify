@@ -14,9 +14,20 @@ export function normalizeText(value: unknown): string {
 		.replace(/\s+/g, ' ');
 }
 
+const MAX_NAME_LENGTH = 1000;
+
+/** Collapsed whitespace and bounded length keep the regexes below linear on server data. */
+function boundedText(value: unknown): string {
+	return String(value ?? '')
+		.slice(0, 4 * MAX_NAME_LENGTH)
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, MAX_NAME_LENGTH);
+}
+
 /** The title without a trailing edition note: "(Deluxe Edition)", "[2011 Remaster]", "- Remastered". */
 export function baseTitle(value: unknown): string {
-	let text = String(value ?? '').trim();
+	let text = boundedText(value);
 	for (let i = 0; i < 4; i++) {
 		const next = text
 			.replace(/\s*[([][^()[\]]{1,80}[)\]]\s*$/, '')
@@ -30,7 +41,7 @@ export function baseTitle(value: unknown): string {
 
 /** The whole credit and every artist named in it: "A, B feat. C" -> ["a b feat c", "a", "b", "c"]. */
 export function artistCandidates(value: unknown): string[] {
-	const raw = String(value ?? '').trim();
+	const raw = boundedText(value);
 	if (raw === '') return [];
 	const parts = raw
 		.split(/\s*(?:,|;|\/|\bfeat\.?|\bft\.?|\bfeaturing\b|&|\band\b)\s*/i)

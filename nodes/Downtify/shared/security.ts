@@ -124,12 +124,15 @@ const SAFE_PATH = /^[A-Za-z0-9\-._~:@!$&'()*+,=%/]*$/;
 
 /**
  * Percent-escapes allowed in Custom API Call paths: printable ASCII only, never ".", "/", "\",
- * "%" (double encoding) or ";". Bytes >= 0x80 (e.g. overlong UTF-8 "%c0%ae") are rejected.
+ * "%" (double encoding) or ";". Bytes >= 0x80 (e.g. overlong UTF-8 "%c0%ae") are rejected, and so
+ * are escaped letters, digits and "-_~": the server decodes them, so "librar%79" could slip past
+ * the route policy.
  */
 function hasForbiddenEscape(path: string): boolean {
 	for (const m of path.matchAll(/%([0-9a-f]{2})/gi)) {
 		const code = parseInt(m[1], 16);
 		if (code < 0x20 || code >= 0x7f || [0x25, 0x2e, 0x2f, 0x3b, 0x5c].includes(code)) return true;
+		if (/[A-Za-z0-9_~-]/.test(String.fromCharCode(code))) return true;
 	}
 	return /%(?![0-9a-f]{2})/i.test(path);
 }
