@@ -4,7 +4,7 @@
  * With Username & Password, n8n calls the credential's preAuthentication when the stored device
  * token is empty, after a 401 and on every credential test. It signs in once with
  * POST /api/auth/token and n8n stores the device token in the hidden `sessionToken` field.
- * `sessionFingerprint` ties that token to the Base URL, username and password it was issued
+ * `sessionTokenFingerprint` ties that token to the Base URL, username and password it was issued
  * for, so a token is never sent to another server or reused for another user.
  */
 import type { ICredentialDataDecryptedObject, IDataObject, IHttpRequestHelper, IHttpRequestOptions } from 'n8n-workflow';
@@ -74,7 +74,7 @@ export function credentialPassword(raw: ICredentialDataDecryptedObject): string 
  * The token is part of the input: a fast hash of the password alone could be brute-forced by
  * anyone who sees the stored fingerprint.
  */
-export function sessionFingerprint(baseUrl: string, user: string, pass: string, token: string): string {
+export function sessionTokenFingerprint(baseUrl: string, user: string, pass: string, token: string): string {
 	const input = `${token}\n${baseUrl}\n${user}\n${pass}`;
 	return `v2.${stateKey(input)}.${stateKey(`${input}\n${token}`)}`;
 }
@@ -94,7 +94,7 @@ export function credentialToken(raw: ICredentialDataDecryptedObject): string {
 	} catch {
 		return '';
 	}
-	return raw.sessionFingerprint === sessionFingerprint(baseUrl, username(raw), password(raw), token) ? token : '';
+	return raw.sessionTokenFingerprint === sessionTokenFingerprint(baseUrl, username(raw), password(raw), token) ? token : '';
 }
 
 interface SignInResponse {
@@ -226,7 +226,7 @@ export async function preAuthenticate(
 		);
 		// Sign in again only when Downtify no longer accepts the token. Any other answer (server
 		// error, wrong path...) is reported by the request itself instead of adding a device.
-		if (me.statusCode !== 401) return { sessionToken: saved, sessionFingerprint: sessionFingerprint(baseUrl, user, pass, saved) };
+		if (me.statusCode !== 401) return { sessionToken: saved, sessionTokenFingerprint: sessionTokenFingerprint(baseUrl, user, pass, saved) };
 	}
 
 	const res = await call(
@@ -247,5 +247,5 @@ export async function preAuthenticate(
 			'Check that the Base URL points to Downtify 3.8 or later.',
 		);
 	}
-	return { sessionToken: token, sessionFingerprint: sessionFingerprint(baseUrl, user, pass, token) };
+	return { sessionToken: token, sessionTokenFingerprint: sessionTokenFingerprint(baseUrl, user, pass, token) };
 }

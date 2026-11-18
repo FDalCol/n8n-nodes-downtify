@@ -29,7 +29,7 @@ describe('credential', () => {
 
 	it('offers Username & Password (default) and Device Token, with secrets in password fields', () => {
 		const byName = Object.fromEntries(credentialType.properties.map((p) => [p.name, p]));
-		expect(Object.keys(byName)).toEqual(['authentication', 'baseUrl', 'username', 'password', 'deviceToken', 'sessionToken', 'sessionFingerprint']);
+		expect(Object.keys(byName)).toEqual(['authentication', 'baseUrl', 'username', 'password', 'deviceToken', 'sessionToken', 'sessionTokenFingerprint']);
 		expect(byName.authentication.default).toBe('password');
 		expect(byName.authentication.options!.map((o) => (o as { value: string }).value)).toEqual(['deviceToken', 'password']);
 		expect(byName.password.typeOptions).toEqual({ password: true });
@@ -37,7 +37,7 @@ describe('credential', () => {
 		// Hidden and expirable: n8n runs preAuthentication when empty and after a 401;
 		// password: n8n never sends the stored token to the browser
 		expect(byName.sessionToken).toMatchObject({ type: 'hidden', default: '', typeOptions: { expirable: true, password: true } });
-		expect(byName.sessionFingerprint).toMatchObject({ type: 'hidden', typeOptions: { password: true } });
+		expect(byName.sessionTokenFingerprint).toMatchObject({ type: 'hidden', typeOptions: { password: true } });
 		expect(typeof credentialType.preAuthentication).toBe('function');
 	});
 

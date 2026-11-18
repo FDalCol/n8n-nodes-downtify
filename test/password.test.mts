@@ -60,8 +60,8 @@ describe('Username & Password', () => {
 		expect(signIns()[0].headers.authorization).toBeUndefined();
 		const token = server.issuedTokens[0];
 		expect(stored.sessionToken).toBe(token);
-		expect(String(stored.sessionFingerprint)).toMatch(/^v2\./);
-		expect(String(stored.sessionFingerprint)).not.toContain(PASSWORD);
+		expect(String(stored.sessionTokenFingerprint)).toMatch(/^v2\./);
+		expect(String(stored.sessionTokenFingerprint)).not.toContain(PASSWORD);
 		expect(credentialSaves.count).toBe(1);
 		expect(bearer(server, '/api/me')).toEqual([`Bearer ${token}`]);
 		// The password travels only in the JSON body of the sign-in request
@@ -157,7 +157,7 @@ describe('Username & Password', () => {
 		expect(stored.sessionToken).toBe(other.issuedTokens[0]);
 
 		// Another user on the first server: no reuse of the other user's token
-		const forUser = passwordCredentials(server, { sessionToken: token, sessionFingerprint: stored.sessionFingerprint, username: 'someone' });
+		const forUser = passwordCredentials(server, { sessionToken: token, sessionTokenFingerprint: stored.sessionTokenFingerprint, username: 'someone' });
 		const err = await runNodeError({ credentials: forUser, params: getMe });
 		expect(err.message).toMatch(/rejected the username or password/);
 		expect(server.requests.filter((r) => r.path === '/api/me').map((r) => r.headers.authorization)).toEqual([`Bearer ${token}`, undefined, undefined]);
@@ -210,9 +210,9 @@ describe('Username & Password: hardening', () => {
 		await runNode({ credentials: a, params: getMe });
 		await runNode({ credentials: b, params: getMe });
 		expect(a.sessionToken).not.toBe(b.sessionToken);
-		expect(a.sessionFingerprint).not.toBe(b.sessionFingerprint);
+		expect(a.sessionTokenFingerprint).not.toBe(b.sessionTokenFingerprint);
 		// A fingerprint copied next to another token is not accepted
-		const mixed = passwordCredentials(server, { sessionToken: a.sessionToken, sessionFingerprint: b.sessionFingerprint });
+		const mixed = passwordCredentials(server, { sessionToken: a.sessionToken, sessionTokenFingerprint: b.sessionTokenFingerprint });
 		server.requests.length = 0;
 		await runNode({ credentials: mixed, params: getMe });
 		expect(bearer(server, '/api/me')[0]).toBeUndefined();
@@ -265,7 +265,7 @@ describe('credential test (Test button)', () => {
 		expect(signIns()).toHaveLength(1);
 
 		// Saved again in a dialog still open since creation: the form still has no token
-		const staleForm: ICredentialDataDecryptedObject = { ...readCredentials(stored), sessionToken: '', sessionFingerprint: '' };
+		const staleForm: ICredentialDataDecryptedObject = { ...readCredentials(stored), sessionToken: '', sessionTokenFingerprint: '' };
 		expect((await runCredentialTest(stored, staleForm)).status).toBe('OK');
 		expect(signIns()).toHaveLength(2);
 
