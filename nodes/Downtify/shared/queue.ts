@@ -4,7 +4,7 @@
  * - a job's ID is the song's `song_id`, else its `url` (`_register_job`); `GET /api/queue`
  *   rows carry no ID of their own, so it is read back from `row.song`;
  * - statuses are `queued`, `downloading`, `done` and `error`;
- * - with "Download again if the file exists" off, a song already in the library ends `done`
+ * - with "Download again if the file exists" off, tracks the library already has end `done`
  *   with the message "Already in library", "Already on disk" or "Already downloaded";
  * - a job with the same ID that already finished is reset to `queued` by the new request
  *   before the response, an active one is shared: polling the returned IDs is safe;

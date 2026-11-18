@@ -135,10 +135,10 @@ shared with this request. Output:
 
 ```json
 {
-  "url": "https://www.deezer.com/album/302127", "kind": "album", "title": "Discovery", "artist": "Daft Punk",
+  "url": "https://www.deezer.com/album/1000001", "kind": "album", "title": "Example Album", "artist": "Example Artist",
   "status": "completed", "totalTracks": 14, "downloaded": 13, "alreadyPresent": 1,
-  "failedCount": 0, "failed": [], "files": ["Daft Punk/Discovery/01 One More Time.mp3"],
-  "existingFiles": ["…"], "jobIds": ["3135556", "…"], "retries": 0
+  "failedCount": 0, "failed": [], "files": ["Example Artist/Example Album/01 First Track.mp3"],
+  "existingFiles": ["…"], "jobIds": ["1000011", "…"], "retries": 0
 }
 ```
 
@@ -184,9 +184,9 @@ Example item for Batch Finished:
 
 ```json
 {
-  "event": "batchFinished", "album": "Discovery", "artist": "Daft Punk", "total": 14,
+  "event": "batchFinished", "album": "Example Album", "artist": "Example Artist", "total": 14,
   "downloaded": 13, "alreadyPresent": 0, "failedCount": 1,
-  "failed": [{ "jobId": "3135563", "title": "Digital Love", "artist": "Daft Punk", "message": "Error: …" }],
+  "failed": [{ "jobId": "1000018", "title": "Eighth Track", "artist": "Example Artist", "message": "Error: …" }],
   "files": ["…"], "jobIds": ["…"]
 }
 ```
