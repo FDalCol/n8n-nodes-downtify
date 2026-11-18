@@ -17,6 +17,8 @@ import { MAX_RESPONSE_BYTES, normalizeBaseUrl, redactString, redactValue, REQUES
 
 export const CREDENTIAL_NAME = 'downtifyApi';
 
+const MIN_OUTPUT_REDACTION_LENGTH = 8;
+
 export type DowntifyContext = IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions;
 
 export type DowntifyMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -84,10 +86,11 @@ export class DowntifyClient {
 
 	private addSecrets(credentials: DowntifyCredentials): void {
 		if (credentials.token && !this.secrets.includes(credentials.token)) this.secrets.push(credentials.token);
-		// Not used on outputs: the server never returns the password, and redacting a short
-		// password there would corrupt ordinary data.
-		if (credentials.password && !this.errorSecrets.includes(credentials.password)) {
-			this.errorSecrets.push(credentials.password);
+		const pass = credentials.password;
+		if (pass && !this.secrets.includes(pass) && !this.errorSecrets.includes(pass)) {
+			// Downtify never returns the password. Outputs are redacted only for passwords of 8+
+			// characters: replacing a short one would corrupt ordinary data.
+			(pass.length >= MIN_OUTPUT_REDACTION_LENGTH ? this.secrets : this.errorSecrets).push(pass);
 		}
 	}
 

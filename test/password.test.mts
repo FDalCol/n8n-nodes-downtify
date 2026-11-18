@@ -60,7 +60,7 @@ describe('Username & Password', () => {
 		expect(signIns()[0].headers.authorization).toBeUndefined();
 		const token = server.issuedTokens[0];
 		expect(stored.sessionToken).toBe(token);
-		expect(String(stored.sessionFingerprint)).toMatch(/^v1\./);
+		expect(String(stored.sessionFingerprint)).toMatch(/^v2\./);
 		expect(String(stored.sessionFingerprint)).not.toContain(PASSWORD);
 		expect(credentialSaves.count).toBe(1);
 		expect(bearer(server, '/api/me')).toEqual([`Bearer ${token}`]);
@@ -200,6 +200,55 @@ describe('Username & Password', () => {
 		expect(await poll({ credentials: stored, params: { event: 'downloadFinished' }, staticData: {} })).toBeNull();
 		expect(signIns()).toHaveLength(1);
 		expect(stored.sessionToken).toBe(server.issuedTokens[0]);
+	});
+});
+
+describe('Username & Password: hardening', () => {
+	it('the stored fingerprint depends on the token, so it cannot be used to guess the password', async () => {
+		const a = passwordCredentials(server);
+		const b = passwordCredentials(server);
+		await runNode({ credentials: a, params: getMe });
+		await runNode({ credentials: b, params: getMe });
+		expect(a.sessionToken).not.toBe(b.sessionToken);
+		expect(a.sessionFingerprint).not.toBe(b.sessionFingerprint);
+		// A fingerprint copied next to another token is not accepted
+		const mixed = passwordCredentials(server, { sessionToken: a.sessionToken, sessionFingerprint: b.sessionFingerprint });
+		server.requests.length = 0;
+		await runNode({ credentials: mixed, params: getMe });
+		expect(bearer(server, '/api/me')[0]).toBeUndefined();
+	});
+
+	it('redacts a password of 8+ characters also from outputs', async () => {
+		server.on('GET', '/api/me', () => ({ json: { user: { username: 'n8n' }, note: `echo ${PASSWORD}` } }));
+		const [me] = await runNodeJson({ credentials: passwordCredentials(server), params: getMe });
+		expect(me.note).toBe('echo [REDACTED]');
+	});
+
+	it('a server that always answers 401: at most one renewal per execution, no loop', async () => {
+		// Sign-in succeeds, but Downtify never accepts the token it returned
+		server.on('POST', '/api/auth/token', () => ({ json: { token: `dtfy_aaaaaaaaaaaa_${'x'.repeat(40)}` } }));
+		const stored = passwordCredentials(server);
+		const items = await runNode({ credentials: stored, params: [getMe, getMe, getMe], continueOnFail: true });
+		expect(items.map((i) => String(i.json.error))).toEqual([
+			expect.stringMatching(/still refuses the device token after signing in again/),
+			expect.stringMatching(/^Downtify API error 401/),
+			expect.stringMatching(/^Downtify API error 401/),
+		]);
+		// First run: sign-in with an empty token, then one renewal
+		expect(signIns()).toHaveLength(2);
+		expect(server.requestsTo('GET', '/api/me').length).toBeLessThanOrEqual(6);
+
+		server.requests.length = 0;
+		await runNodeError({ credentials: stored, params: getMe });
+		expect(signIns()).toHaveLength(1);
+		expect(server.requestsTo('GET', '/api/me').length).toBeLessThanOrEqual(4);
+	});
+
+	it('never puts secrets in the messages of n8n errors', async () => {
+		const stored = passwordCredentials(server, { password: 'wrong-password-123' });
+		const err = (await runNodeError({ credentials: stored, params: getMe })) as Error & { messages?: string[]; description?: string };
+		const all = JSON.stringify({ message: err.message, description: err.description, messages: err.messages, stack: err.stack });
+		expect(all).not.toContain('wrong-password-123');
 	});
 });
 

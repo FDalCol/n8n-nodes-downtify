@@ -70,8 +70,13 @@ export function credentialPassword(raw: ICredentialDataDecryptedObject): string 
 	return authMode(raw) === 'password' ? password(raw) : '';
 }
 
-export function sessionFingerprint(baseUrl: string, user: string, pass: string): string {
-	return `v1.${stateKey(`${baseUrl}\n${user}\n${pass}`)}.${stateKey(`${pass}\n${user}\n${baseUrl}`)}`;
+/**
+ * The token is part of the input: a fast hash of the password alone could be brute-forced by
+ * anyone who sees the stored fingerprint.
+ */
+export function sessionFingerprint(baseUrl: string, user: string, pass: string, token: string): string {
+	const input = `${token}\n${baseUrl}\n${user}\n${pass}`;
+	return `v2.${stateKey(input)}.${stateKey(`${input}\n${token}`)}`;
 }
 
 /**
@@ -89,7 +94,7 @@ export function credentialToken(raw: ICredentialDataDecryptedObject): string {
 	} catch {
 		return '';
 	}
-	return raw.sessionFingerprint === sessionFingerprint(baseUrl, username(raw), password(raw)) ? token : '';
+	return raw.sessionFingerprint === sessionFingerprint(baseUrl, username(raw), password(raw), token) ? token : '';
 }
 
 interface SignInResponse {
@@ -210,7 +215,6 @@ export async function preAuthenticate(
 	}
 	if (pass.length > MAX_PASSWORD_LENGTH) throw new DowntifySignInError('Password is too long');
 
-	const fingerprint = sessionFingerprint(baseUrl, user, pass);
 	const saved = credentialToken(raw);
 	const secrets = [pass, saved].filter((s) => s !== '');
 
@@ -222,7 +226,7 @@ export async function preAuthenticate(
 		);
 		// Sign in again only when Downtify no longer accepts the token. Any other answer (server
 		// error, wrong path...) is reported by the request itself instead of adding a device.
-		if (me.statusCode !== 401) return { sessionToken: saved, sessionFingerprint: fingerprint };
+		if (me.statusCode !== 401) return { sessionToken: saved, sessionFingerprint: sessionFingerprint(baseUrl, user, pass, saved) };
 	}
 
 	const res = await call(
@@ -243,5 +247,5 @@ export async function preAuthenticate(
 			'Check that the Base URL points to Downtify 3.8 or later.',
 		);
 	}
-	return { sessionToken: token, sessionFingerprint: fingerprint };
+	return { sessionToken: token, sessionFingerprint: sessionFingerprint(baseUrl, user, pass, token) };
 }

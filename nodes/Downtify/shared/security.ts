@@ -235,9 +235,9 @@ const RULES: Array<[string[], RegExp, Scope]> = [
 	[READ, /^\/api\/version$/, 'public'],
 	[READ, /^\/api\/server\/info$/, 'public'],
 	[READ, /^\/api\/auth\/status$/, 'public'],
-	[READ, /^\/api\/auth\/oidc(\/callback)?$/, 'public'],
 	[['POST'], /^\/api\/auth\/(login|logout|pair|token)$/, 'signIn'],
-	[ALL, /^\/api\/auth\/(ws-ticket|pairing)/, 'signIn'],
+	// OIDC sign-in is public in Downtify, but it is a sign-in flow: never sent by this node.
+	[ALL, /^\/api\/auth\/(ws-ticket|pairing|oidc)/, 'signIn'],
 	[READ, /^\/api\/me$/, 'client'],
 	[ALL, /^\/api\/me(\/|$)/, 'user'],
 	[ALL, /^\/api\/auth\/(devices|pairing)(\/|$)/, 'user'],

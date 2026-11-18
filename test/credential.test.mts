@@ -37,7 +37,7 @@ describe('credential', () => {
 		// Hidden and expirable: n8n runs preAuthentication when empty and after a 401;
 		// password: n8n never sends the stored token to the browser
 		expect(byName.sessionToken).toMatchObject({ type: 'hidden', default: '', typeOptions: { expirable: true, password: true } });
-		expect(byName.sessionFingerprint.type).toBe('hidden');
+		expect(byName.sessionFingerprint).toMatchObject({ type: 'hidden', typeOptions: { password: true } });
 		expect(typeof credentialType.preAuthentication).toBe('function');
 	});
 

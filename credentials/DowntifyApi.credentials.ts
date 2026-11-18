@@ -98,6 +98,8 @@ export class DowntifyApi implements ICredentialType {
 			displayName: 'Session Fingerprint',
 			name: 'sessionFingerprint',
 			type: 'hidden',
+			// Derived from the password and the token: never sent to the browser either.
+			typeOptions: { password: true },
 			default: '',
 		},
 	];
