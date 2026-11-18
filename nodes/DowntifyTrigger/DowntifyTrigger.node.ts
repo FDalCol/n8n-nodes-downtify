@@ -41,7 +41,6 @@ interface Snapshot {
 	sample: IDataObject | undefined;
 }
 
-/** Maximum number of podcast shows read per poll. */
 const MAX_SHOWS = 500;
 
 function csvList(value: unknown): string[] {
@@ -213,8 +212,6 @@ export class DowntifyTrigger implements INodeType {
 		return [snapshot.items.map((json) => ({ json: client!.redactValue(json) }))];
 	}
 }
-
-// -------------------------------------------------------------------------------------------------
 
 /** Download Finished / Download Failed: a job reaches `done` / `error` (dedupe by job ID + status). */
 async function pollJobs(

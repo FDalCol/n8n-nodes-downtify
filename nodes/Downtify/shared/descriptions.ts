@@ -4,7 +4,6 @@ import { MAX_LIST_ENTRIES } from './security';
 
 export const README_URL = 'https://github.com/FDalCol/n8n-nodes-downtify#readme';
 
-/** Split Into Items for list operations. */
 export function splitIntoItems(resource: string, operations: string[]): INodeProperties {
 	return {
 		displayName: 'Split Into Items',
@@ -16,7 +15,6 @@ export function splitIntoItems(resource: string, operations: string[]): INodePro
 	};
 }
 
-/** Return All / Limit for list operations. */
 export function returnAllLimit(resource: string, operations: string[]): INodeProperties[] {
 	return [
 		{
@@ -39,7 +37,6 @@ export function returnAllLimit(resource: string, operations: string[]): INodePro
 	];
 }
 
-/** Poll Interval and Timeout options used by waiting operations. */
 export const pollIntervalOption: INodeProperties = {
 	displayName: 'Poll Interval (Seconds)',
 	name: 'pollInterval',

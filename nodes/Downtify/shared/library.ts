@@ -40,11 +40,9 @@ export function artistCandidates(value: unknown): string[] {
 }
 
 export interface AlbumMatchOptions {
-	/** Also match titles that differ only by an edition note (default true). */
 	ignoreEdition?: boolean;
 }
 
-/** Library albums (GET /api/library/albums rows) that match an artist and a title. */
 export function matchAlbums(albums: IDataObject[], artist: string, title: string, options: AlbumMatchOptions = {}): IDataObject[] {
 	const ignoreEdition = options.ignoreEdition !== false;
 	const wantedTitle = normalizeText(title);

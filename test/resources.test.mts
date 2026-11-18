@@ -1,6 +1,3 @@
-/**
- * Every resource: queue, resolve & search, library, playlist monitor, podcasts, server.
- */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeDowntify, song } from './helpers/fakeDowntify.mts';

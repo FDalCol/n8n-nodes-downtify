@@ -1,7 +1,3 @@
-/**
- * Security: base URL validation, Bearer token handling and redaction, 401/403, continueOnFail,
- * redirects, Custom API Call path validation and the device-token route policy.
- */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 

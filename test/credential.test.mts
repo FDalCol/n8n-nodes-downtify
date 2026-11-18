@@ -1,7 +1,3 @@
-/**
- * Credential: fields, Bearer header, test request (GET /api/me) and its 401/403 messages with a
- * device token. Username & Password is covered by password.test.mts.
- */
 import type { IHttpRequestOptions } from 'n8n-workflow';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 

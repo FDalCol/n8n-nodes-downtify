@@ -12,12 +12,9 @@ import type {
 import { credentialToken, preAuthenticate } from '../nodes/Downtify/shared/auth';
 
 /**
- * Downtify API credential: Base URL and a device token, sent as `Authorization: Bearer`.
- *
- * - Username & Password (default): n8n signs in once with POST /api/auth/token (preAuthentication)
- *   and stores the device token in the hidden, expirable `sessionToken` field. n8n signs in
- *   again only when the field is empty, after a 401 and when the credential is tested.
- * - Device Token: a token created by the user.
+ * Username & Password: preAuthentication signs in with POST /api/auth/token and n8n stores the
+ * device token in the hidden, expirable `sessionToken` field. n8n 2.45 runs it again only when
+ * that field is empty, after a 401 and on every credential test.
  */
 export class DowntifyApi implements ICredentialType {
 	name = 'downtifyApi';

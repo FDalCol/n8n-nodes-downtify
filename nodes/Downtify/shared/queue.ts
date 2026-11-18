@@ -63,7 +63,6 @@ export function songAlbum(song: unknown): string {
 	return str(s.album_name || s.album);
 }
 
-/** The album artist of a song: `album_artist`, else the first credited artist. */
 export function songAlbumArtist(song: unknown): string {
 	const s = (song ?? {}) as IDataObject;
 	const albumArtist = str(s.album_artist).trim();
@@ -72,7 +71,6 @@ export function songAlbumArtist(song: unknown): string {
 	return str(s.artist).split(',')[0].trim();
 }
 
-/** A queue row with its job ID and the "already present" flag added. */
 export function describeRow(row: IDataObject): IDataObject {
 	return { jobId: rowJobId(row) ?? null, alreadyPresent: isAlreadyPresent(row), ...row };
 }
@@ -102,7 +100,6 @@ export async function getQueueState(client: DowntifyClient): Promise<QueueState 
 export const PAUSED_MESSAGE =
 	'The Downtify download queue is paused. A device token cannot resume it: an admin must resume the queue in the Downtify web interface.';
 
-/** Fails with a clear message when the queue is paused (nothing would start). */
 export async function assertQueueRunning(client: DowntifyClient): Promise<void> {
 	const state = await getQueueState(client);
 	if (state.paused) throw client.error(PAUSED_MESSAGE);

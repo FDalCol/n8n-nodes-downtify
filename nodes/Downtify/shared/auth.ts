@@ -70,7 +70,6 @@ export function credentialPassword(raw: ICredentialDataDecryptedObject): string 
 	return authMode(raw) === 'password' ? password(raw) : '';
 }
 
-/** Ties a session token to the server, user and password it was issued for. */
 export function sessionFingerprint(baseUrl: string, user: string, pass: string): string {
 	return `v1.${stateKey(`${baseUrl}\n${user}\n${pass}`)}.${stateKey(`${pass}\n${user}\n${baseUrl}`)}`;
 }
@@ -187,11 +186,7 @@ function signInFailure(res: SignInResponse, secrets: string[]): DowntifySignInEr
 	}
 }
 
-/**
- * preAuthentication of the credential. Device Token: nothing to do. Username & Password: keeps
- * the stored token if Downtify still accepts it (so a credential test does not add a device),
- * otherwise signs in once and returns the new device token.
- */
+/** Keeps the stored token while Downtify accepts it, so a credential test adds no device. */
 export async function preAuthenticate(
 	helpers: IHttpRequestHelper['helpers'],
 	raw: ICredentialDataDecryptedObject,

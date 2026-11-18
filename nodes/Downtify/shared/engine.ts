@@ -14,7 +14,6 @@ export type ResourceHandlers = Record<string, OperationHandler>;
 export const data = (value: unknown): OperationResult => ({ kind: 'data', data: value });
 export const list = (value: unknown): OperationResult => ({ kind: 'list', data: value });
 
-/** Per item context with typed parameter accessors. */
 export class OperationContext {
 	constructor(
 		readonly ef: IExecuteFunctions,
@@ -35,7 +34,6 @@ export class OperationContext {
 		return this.param<unknown>(name, fallback) === true;
 	}
 
-	/** Collection parameter without empty values. */
 	collection(name: string): IDataObject {
 		const raw = this.param<IDataObject>(name, {}) ?? {};
 		const out: IDataObject = {};
@@ -46,7 +44,6 @@ export class OperationContext {
 		return out;
 	}
 
-	/** Runs a validation function and converts its error into a NodeOperationError. */
 	guard<T>(fn: () => T): T {
 		try {
 			return fn();
@@ -55,7 +52,7 @@ export class OperationContext {
 		}
 	}
 
-	/** Return All / Limit pair; the limit is validated also when it comes from an expression. */
+	/** The limit is validated also when it comes from an expression. */
 	limit(): number | undefined {
 		if (this.bool('returnAll', false)) return undefined;
 		return this.guard(() => validateInteger(this.param('limit', 50), 'Limit', 1, MAX_LIST_ENTRIES));
@@ -74,7 +71,6 @@ export function applyLimit<T>(rows: T[], limit: number | undefined): T[] {
 	return rows.slice(0, Math.min(limit ?? MAX_LIST_ENTRIES, MAX_LIST_ENTRIES));
 }
 
-/** Converts an operation result into output items (with pairedItem and redaction). */
 export function finalize(ctx: OperationContext, result: OperationResult): INodeExecutionData[] {
 	const pairedItem = { item: ctx.itemIndex };
 	const wrap = (json: IDataObject): INodeExecutionData => ({ json: ctx.client.redactValue(json), pairedItem });

@@ -1,32 +1,15 @@
-/**
- * Security helpers: base URL validation, API path validation, the device-token route policy
- * and secret redaction.
- *
- * Every value that crosses into a request URL, an error message or an output item goes
- * through one of these functions.
- */
-
-/** Default timeout for a single API request (ms). */
 export const REQUEST_TIMEOUT_MS = 60_000;
 /** Timeout for requests that ask Downtify to fetch a playlist or album from a provider (ms). */
 export const RESOLVE_TIMEOUT_MS = 180_000;
-/** Maximum accepted size of an API response body (bytes). */
 export const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 /** Maximum number of polling iterations for any wait loop (hard stop). */
 export const MAX_POLL_ITERATIONS = 100_000;
-/** Maximum wait time for any wait loop (seconds): 24 hours. */
 export const MAX_WAIT_SECONDS = 24 * 60 * 60;
-/** Minimum polling interval for any wait loop (seconds). */
 export const MIN_POLL_INTERVAL_SECONDS = 1;
-/** Maximum polling interval for any wait loop (seconds). */
 export const MAX_POLL_INTERVAL_SECONDS = 3600;
-/** Maximum number of entries kept in trigger state. */
 export const MAX_STATE_ENTRIES = 10_000;
-/** Maximum number of entries returned by a list operation. */
 export const MAX_LIST_ENTRIES = 100_000;
-/** Maximum number of tracks queued by one Download URL operation. */
 export const MAX_TRACKS_PER_REQUEST = 10_000;
-/** Maximum number of retry rounds for failed tracks. */
 export const MAX_RETRY_ROUNDS = 5;
 
 /** Short, stable hash of a string (cyrb53), used for small state keys and credential fingerprints. */
@@ -94,7 +77,6 @@ export function normalizeBaseUrl(raw: unknown): string {
 	return `${protocol}//${parsed.host}${path}`;
 }
 
-/** True when the string contains ASCII control characters (0-31, 127). */
 export function hasControlChars(value: string): boolean {
 	for (let i = 0; i < value.length; i++) {
 		const c = value.charCodeAt(i);
@@ -119,7 +101,6 @@ export function validateToken(raw: unknown): string {
 /** Names that must never be used as parameter or object keys (prototype pollution). */
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
-/** True for a safe parameter name: not empty, not __proto__/constructor/prototype. */
 export function isSafeKey(key: string): boolean {
 	return key !== '' && !FORBIDDEN_KEYS.has(key.toLowerCase());
 }
@@ -198,7 +179,6 @@ export function encodeSegment(value: unknown, label = 'value'): string {
 	return encodeURIComponent(str);
 }
 
-/** A positive integer ID (podcast shows and episodes, monitor playlists). */
 export function validateIntegerId(value: unknown, label: string): number {
 	const str = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
 	if (!/^[1-9][0-9]{0,15}$/.test(str)) throw new SecurityError(`${label} must be a positive integer`);
@@ -212,7 +192,6 @@ export function validateDeezerId(value: unknown, label = 'Artist ID'): string {
 	return str;
 }
 
-/** A link to resolve (Spotify, Deezer, YouTube Music, SoundCloud, RSS ...): http(s) only. */
 export function validateLink(value: unknown, label = 'URL'): string {
 	const str = typeof value === 'string' ? value.trim() : '';
 	if (str === '') throw new SecurityError(`${label} is required`);
@@ -225,7 +204,6 @@ export function validateLink(value: unknown, label = 'URL'): string {
 	return str;
 }
 
-/** A free text value sent as a query parameter. */
 export function validateText(value: unknown, label: string, maxLength = 500, required = true): string {
 	const str = typeof value === 'string' ? value.trim() : value === undefined || value === null ? '' : String(value).trim();
 	if (required && str === '') throw new SecurityError(`${label} is required`);
@@ -243,9 +221,7 @@ export function validateInteger(value: unknown, label: string, min: number, max:
 	return n;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Device token route policy (Downtify 3.8.1 downtify/auth.py RULES, same in 3.11.0)
-// ---------------------------------------------------------------------------------------------
+// Device token route policy: Downtify 3.8.1 auth.py RULES, unchanged in 3.11.0.
 
 /** `signIn`: public sign-in and pairing routes, never sent by this node (they create devices). */
 type Scope = 'public' | 'client' | 'user' | 'admin' | 'signIn';
@@ -364,10 +340,6 @@ export function isDeviceRoute(method: string, path: string): boolean {
 	const scope = routeScope(method, path);
 	return scope === 'public' || scope === 'client';
 }
-
-// ---------------------------------------------------------------------------------------------
-// Redaction
-// ---------------------------------------------------------------------------------------------
 
 export const REDACTED = '[REDACTED]';
 

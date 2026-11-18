@@ -1,7 +1,3 @@
-/**
- * Download URL: resolve + batch + waiting on the queue, retries, paused queue, jobs whose IDs
- * are already in the queue, Skip If In Library.
- */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeDowntify, song } from './helpers/fakeDowntify.mts';

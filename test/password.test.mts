@@ -1,8 +1,3 @@
-/**
- * Username & Password authentication: n8n's preAuthentication (emulated as in n8n 2.45) signs
- * in with POST /api/auth/token only when the stored token is missing, after a 401 and for a
- * credential test; the token is stored in the credential and redacted like a device token.
- */
 import type { ICredentialDataDecryptedObject, IDataObject } from 'n8n-workflow';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 

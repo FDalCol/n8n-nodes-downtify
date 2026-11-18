@@ -22,13 +22,10 @@ export type DowntifyContext = IExecuteFunctions | ILoadOptionsFunctions | IPollF
 export type DowntifyMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface DowntifyRequestOptions {
-	/** Query string parameters. */
 	qs?: IDataObject;
-	/** JSON body (POST, PUT, PATCH, DELETE). */
 	body?: unknown;
 	/** Timeout in ms (default 60 s). */
 	timeoutMs?: number;
-	/** Maximum response size in bytes. */
 	maxBytes?: number;
 	/** HTTP status codes returned to the caller instead of raising an error. */
 	acceptStatus?: number[];
@@ -129,7 +126,6 @@ export class DowntifyClient {
 		return (await this.request<T>('POST', path, { ...opts, body })).data;
 	}
 
-	/** Performs a request and returns the status code and the parsed JSON body. */
 	async request<T = unknown>(
 		method: DowntifyMethod,
 		path: string,
@@ -276,7 +272,6 @@ export class DowntifyClient {
 		return { statusCode, statusMessage: String(response?.statusMessage ?? ''), text };
 	}
 
-	/** True when the user cancelled the execution. */
 	isCancelled(): boolean {
 		const getSignal = (this.ctx as { getExecutionCancelSignal?: () => AbortSignal | undefined })
 			.getExecutionCancelSignal;
@@ -287,7 +282,6 @@ export class DowntifyClient {
 		if (this.isCancelled()) throw this.error('Execution was cancelled');
 	}
 
-	/** Waits between polls; stops early when the execution is cancelled. */
 	async pause(ms: number): Promise<void> {
 		this.throwIfCancelled();
 		// Short slices, so a cancelled execution stops within a second

@@ -1,8 +1,3 @@
-/**
- * Downtify Trigger: Download Finished, Download Failed, Batch Finished and New Podcast Episode
- * Downloaded; first run without events, test mode with a real sample, dedupe by job ID +
- * status, bounded state.
- */
 import type { IDataObject } from 'n8n-workflow';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 

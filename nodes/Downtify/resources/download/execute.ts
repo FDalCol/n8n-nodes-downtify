@@ -34,7 +34,7 @@ export interface WaitSettings {
 	timeoutMs: number;
 }
 
-/** Poll Interval and Timeout from an options collection, validated also when set by expression. */
+/** Validated also when set by expression. */
 export function waitSettings(ctx: OperationContext, options: IDataObject, defaultTimeout = 3600): WaitSettings {
 	return ctx.guard(() => ({
 		pollIntervalMs:
@@ -89,7 +89,6 @@ export const downloadHandlers: ResourceHandlers = {
 		const settings = waitSettings(ctx, options);
 		const startedAt = Date.now();
 
-		// 1. What the link points at
 		const resolved = (await ctx.client.get<IDataObject>('/api/url/resolve', { url }, { timeoutMs: RESOLVE_TIMEOUT_MS })) ?? {};
 		const kind = String(resolved.kind ?? '');
 		if (!SUPPORTED_KINDS.includes(kind)) {
@@ -110,7 +109,6 @@ export const downloadHandlers: ResourceHandlers = {
 		const artist = String(resolved.subtitle || (kind === 'playlist' ? '' : songArtist(tracks[0])));
 		const summary: IDataObject = { url, kind, title, artist, totalTracks: tracks.length };
 
-		// 2. Album already in the library?
 		if (skipIfInLibrary && kind === 'album') {
 			const match = await findAlbum(ctx.client, artist, title);
 			if (match.found) {
@@ -130,7 +128,7 @@ export const downloadHandlers: ResourceHandlers = {
 			}
 		}
 
-		// 3. Queue (a paused queue would never start them)
+		// A paused queue would never start the jobs
 		await assertQueueRunning(ctx.client);
 		const playlistUrl = kind === 'playlist' ? url : undefined;
 		const jobs = await queueSongs(ctx, tracks, playlistUrl, kind === 'playlist' && generateM3u);
@@ -138,7 +136,6 @@ export const downloadHandlers: ResourceHandlers = {
 		const base: IDataObject = { ...summary, skipped: false, jobIds, queuedTracks: jobIds.length };
 		if (!wait) return data({ ...base, status: 'queued' });
 
-		// 4. Wait, then retry the failed tracks
 		const deadline = startedAt + settings.timeoutMs;
 		const results = new Map<string, JobOutcome>();
 		let toWait = jobs;
@@ -161,7 +158,6 @@ export const downloadHandlers: ResourceHandlers = {
 			for (const id of toWait.keys()) results.delete(id);
 		}
 
-		// 5. Summary
 		const outcomes = jobIds.map((id) => results.get(id));
 		const done = outcomes.filter((o): o is JobOutcome => o?.status === 'done');
 		const failed = outcomes.filter((o): o is JobOutcome => o?.status === 'error' || o?.status === 'removed');

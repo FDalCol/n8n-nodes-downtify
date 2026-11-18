@@ -1,9 +1,7 @@
 /**
- * Test harness: minimal IExecuteFunctions / IPollFunctions implementations.
- * HTTP requests go through the real n8n 2.45 request implementation (@n8n/backend-network
- * 1.19.0), after preAuthentication and authenticate() exactly like n8n 2.45 does. The
- * `credentials` object of a run plays the stored credential: preAuthentication results are
- * saved into it.
+ * Requests go through the real n8n 2.45 HTTP code (@n8n/backend-network 1.19.0), after
+ * preAuthentication and authenticate() as n8n 2.45 runs them. The `credentials` object of a run
+ * is the stored credential: preAuthentication results are saved into it.
  */
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -189,7 +187,6 @@ export interface RunOptions {
 	params: Params | Params[];
 	items?: INodeExecutionData[];
 	continueOnFail?: boolean;
-	/** Simulates the execution cancel signal of n8n. */
 	cancelSignal?: AbortSignal;
 }
 
@@ -218,7 +215,6 @@ export async function runNodeJson(opts: RunOptions): Promise<IDataObject[]> {
 	return (await runNode(opts)).map((i) => i.json);
 }
 
-/** Runs the node and returns the error it throws. */
 export async function runNodeError(opts: RunOptions): Promise<Error & { description?: string }> {
 	return await runNode(opts).then(
 		() => {

@@ -1,4 +1,3 @@
-/** Helpers shared by the node transport and the credential sign-in: bodies, errors. */
 import type { IDataObject } from 'n8n-workflow';
 
 import { SecurityError } from './security';

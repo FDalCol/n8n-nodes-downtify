@@ -9,7 +9,6 @@ import type { AddressInfo } from 'node:net';
 
 export const TOKEN = 'dtfy_abcdefghjkmn_S3cr3tT0kenValue0123456789abcdefXYZ';
 
-/** Account of the fake server for POST /api/auth/token. */
 export const USERNAME = 'n8n';
 export const PASSWORD = 'Pa55-w0rd!secret';
 
@@ -83,17 +82,14 @@ export class FakeDowntify {
 	/** Outcomes per song ID, one per download attempt (default: done). */
 	readonly plan = new Map<string, Outcome[]>();
 
-	/** Resolve answers per URL. */
 	readonly links = new Map<string, Record<string, unknown>>();
 
 	paused = false;
 
 	authDisabled = false;
 
-	/** Device tokens Downtify accepts (the fixed TOKEN plus the ones issued by sign-in). */
 	readonly tokens = new Set<string>([TOKEN]);
 
-	/** Tokens issued by POST /api/auth/token, in order. */
 	readonly issuedTokens: string[] = [];
 
 	/** POST /api/auth/token answers 409 (DOWNTIFY_DISABLE_AUTH / DISABLE_LOCAL_LOGIN). */
@@ -220,7 +216,6 @@ export class FakeDowntify {
 		}
 	}
 
-	/** Revokes a device token (Settings > Apps > Revoke). */
 	revoke(token: string): void {
 		this.tokens.delete(token);
 	}
