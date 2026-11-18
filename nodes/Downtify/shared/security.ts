@@ -29,6 +29,20 @@ export const MAX_TRACKS_PER_REQUEST = 10_000;
 /** Maximum number of retry rounds for failed tracks. */
 export const MAX_RETRY_ROUNDS = 5;
 
+/** Short, stable hash of a string (cyrb53), used for small state keys and credential fingerprints. */
+export function stateKey(value: string): string {
+	let h1 = 0xdeadbeef;
+	let h2 = 0x41c6ce57;
+	for (let i = 0; i < value.length; i++) {
+		const ch = value.charCodeAt(i);
+		h1 = Math.imul(h1 ^ ch, 2654435761);
+		h2 = Math.imul(h2 ^ ch, 1597334677);
+	}
+	h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+	h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+	return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
 export class SecurityError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -389,7 +403,7 @@ const SECRET_KEYS = new Set(['password', 'token', 'secret', 'authorization', 'co
 
 function isSecretKey(key: string): boolean {
 	const k = key.toLowerCase();
-	return SECRET_KEYS.has(k) || k.includes('password') || k.includes('secret') || k.endsWith('_token');
+	return SECRET_KEYS.has(k) || k.includes('password') || k.includes('secret') || k.endsWith('token');
 }
 
 /** Deep copy of a value with secret keys removed and secret values redacted. */

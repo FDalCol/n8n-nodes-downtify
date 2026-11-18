@@ -11,15 +11,9 @@ import {
 	type IPollFunctions,
 } from 'n8n-workflow';
 
-import {
-	MAX_RESPONSE_BYTES,
-	normalizeBaseUrl,
-	redactString,
-	redactValue,
-	REQUEST_TIMEOUT_MS,
-	SecurityError,
-	validateToken,
-} from './security';
+import { authMode, credentialPassword, credentialToken, findSignInError, type AuthMode } from './auth';
+import { describeNetworkError, errorDetail, readBody, tooLargeMessage } from './response';
+import { MAX_RESPONSE_BYTES, normalizeBaseUrl, redactString, redactValue, REQUEST_TIMEOUT_MS } from './security';
 
 export const CREDENTIAL_NAME = 'downtifyApi';
 
@@ -42,7 +36,11 @@ export interface DowntifyRequestOptions {
 
 export interface DowntifyCredentials {
 	baseUrl: string;
+	mode: AuthMode;
+	/** Token sent as Bearer: the device token, or the stored session token (may be empty). */
 	token: string;
+	/** Password of Username & Password, kept only to redact it from error messages. */
+	password: string;
 }
 
 export interface DowntifyResponse<T = unknown> {
@@ -59,91 +57,10 @@ interface RawResponse {
 export function parseCredentials(raw: ICredentialDataDecryptedObject): DowntifyCredentials {
 	return {
 		baseUrl: normalizeBaseUrl(raw.baseUrl),
-		token: validateToken(raw.deviceToken),
+		mode: authMode(raw),
+		token: credentialToken(raw),
+		password: credentialPassword(raw),
 	};
-}
-
-/** Decodes the (already buffered) response body; the size is checked again as a safety net. */
-function readBody(body: unknown, maxBytes: number): string {
-	if (body === undefined || body === null) return '';
-	if (typeof body === 'string') {
-		if (Buffer.byteLength(body) > maxBytes) throw new SecurityError('Response too large');
-		return body;
-	}
-	if (Buffer.isBuffer(body) || body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
-		const buf = Buffer.isBuffer(body)
-			? body
-			: body instanceof ArrayBuffer
-				? Buffer.from(body)
-				: Buffer.from(body.buffer, body.byteOffset, body.byteLength);
-		if (buf.length > maxBytes) throw new SecurityError('Response too large');
-		return buf.toString('utf8');
-	}
-	return JSON.stringify(body);
-}
-
-function tooLargeMessage(maxBytes: number): string {
-	return `Response too large (more than ${Math.round(maxBytes / 1024 / 1024)} MiB), aborted`;
-}
-
-function describeNetworkError(error: unknown): { message: string; description?: string } {
-	const e = error as {
-		code?: string;
-		message?: string;
-		description?: string;
-		cause?: { code?: string; message?: string; cause?: { code?: string; message?: string } };
-		context?: { data?: { code?: string } };
-	};
-	const haystack = [
-		e?.code,
-		e?.cause?.code,
-		e?.cause?.cause?.code,
-		e?.context?.data?.code,
-		e?.message,
-		e?.description,
-		e?.cause?.message,
-		e?.cause?.cause?.message,
-	]
-		.filter((x) => typeof x === 'string')
-		.join(' ');
-	if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|certificate|ERR_TLS_CERT/i.test(haystack)) {
-		return {
-			message: 'TLS certificate of the Downtify server is not trusted (self-signed, expired or wrong host name)',
-			description: 'Use a trusted certificate on the reverse proxy in front of Downtify.',
-		};
-	}
-	if (/EPROTO|wrong version number|SSL routines|ERR_SSL/i.test(haystack)) {
-		return {
-			message: 'TLS handshake with the Downtify server failed',
-			description: 'Check whether the Base URL should use http:// or https://.',
-		};
-	}
-	if (/ECONNREFUSED/.test(haystack)) return { message: 'Connection refused by the Downtify server', description: 'Check host and port of the Base URL.' };
-	if (/ENOTFOUND|EAI_AGAIN/.test(haystack)) return { message: 'Downtify host not found', description: 'Check the host name of the Base URL.' };
-	if (/ETIMEDOUT|ECONNABORTED|timeout/i.test(haystack)) return { message: 'Request to Downtify timed out' };
-	if (/ECONNRESET|socket hang up/i.test(haystack)) return { message: 'Connection to Downtify was reset' };
-	if (/cancel|abort/i.test(haystack)) return { message: 'Request to Downtify was cancelled' };
-	return { message: 'Request to Downtify failed', description: typeof e?.message === 'string' ? e.message : undefined };
-}
-
-/** FastAPI error detail: a string, or a list of validation errors. */
-export function errorDetail(body: unknown): string {
-	if (!body || typeof body !== 'object') return '';
-	const detail = (body as IDataObject).detail;
-	if (typeof detail === 'string') return detail.trim();
-	if (Array.isArray(detail)) {
-		return detail
-			.map((d) => {
-				if (!d || typeof d !== 'object') return String(d);
-				const loc = Array.isArray((d as IDataObject).loc) ? ((d as IDataObject).loc as unknown[]).join('.') : '';
-				const msg = typeof (d as IDataObject).msg === 'string' ? ((d as IDataObject).msg as string) : JSON.stringify(d);
-				return loc ? `${loc}: ${msg}` : msg;
-			})
-			.join('; ')
-			.slice(0, 2000);
-	}
-	if (detail && typeof detail === 'object') return JSON.stringify(detail).slice(0, 2000);
-	return '';
 }
 
 /**
@@ -152,13 +69,29 @@ export function errorDetail(body: unknown): string {
  * with redirects disabled, a timeout and a response size limit.
  */
 export class DowntifyClient {
+	/** Secret values removed from outputs and errors (tokens). */
 	private readonly secrets: string[] = [];
+
+	/** Also removed from error messages (the password). */
+	private readonly errorSecrets: string[] = [];
+
+	/** Username & Password: the session was renewed once in this execution. */
+	private renewed = false;
 
 	constructor(
 		private readonly ctx: DowntifyContext,
-		readonly credentials: DowntifyCredentials,
+		public credentials: DowntifyCredentials,
 	) {
-		if (credentials.token) this.secrets.push(credentials.token);
+		this.addSecrets(credentials);
+	}
+
+	private addSecrets(credentials: DowntifyCredentials): void {
+		if (credentials.token && !this.secrets.includes(credentials.token)) this.secrets.push(credentials.token);
+		// Not used on outputs: the server never returns the password, and redacting a short
+		// password there would corrupt ordinary data.
+		if (credentials.password && !this.errorSecrets.includes(credentials.password)) {
+			this.errorSecrets.push(credentials.password);
+		}
 	}
 
 	static async create(ctx: DowntifyContext): Promise<DowntifyClient> {
@@ -175,7 +108,7 @@ export class DowntifyClient {
 	}
 
 	redact(text: string): string {
-		return redactString(text, this.secrets);
+		return redactString(text, [...this.secrets, ...this.errorSecrets]);
 	}
 
 	redactValue<T>(value: T): T {
@@ -204,8 +137,59 @@ export class DowntifyClient {
 	): Promise<DowntifyResponse<T>> {
 		this.assertInternalPath(path);
 		this.throwIfCancelled();
-		const res = await this.send(method, path, opts);
+		let res = await this.send(method, path, opts);
+		if (res.statusCode === 401 && this.credentials.mode === 'password' && !this.renewed) {
+			// Downtify no longer accepts the stored token (revoked, or issued for another server
+			// or user): sign in again once, then repeat the request. A 401 is answered before
+			// Downtify does anything, so repeating a POST is safe.
+			this.renewed = true;
+			await this.renewSession();
+			res = await this.send(method, path, opts);
+		}
 		return this.handleResponse<T>(res, opts.acceptStatus ?? []);
+	}
+
+	/**
+	 * n8n signs in again (preAuthentication) only when a request made through
+	 * httpRequestWithAuthentication fails with 401. The node's own requests read every status
+	 * code, so this cheap request (GET /api/me, which throws on 401) triggers it; n8n then stores
+	 * the new device token in the credential.
+	 */
+	private async renewSession(): Promise<void> {
+		try {
+			await this.ctx.helpers.httpRequestWithAuthentication.call(this.ctx, CREDENTIAL_NAME, {
+				method: 'GET',
+				url: `${this.credentials.baseUrl}/api/me`,
+				headers: { Accept: 'application/json' },
+				encoding: 'arraybuffer',
+				json: false,
+				returnFullResponse: true,
+				disableFollowRedirect: true,
+				sendCredentialsOnCrossOriginRedirect: false,
+				timeout: REQUEST_TIMEOUT_MS,
+				maxResponseBodyBytes: 1024 * 1024,
+			});
+		} catch (error) {
+			const signIn = findSignInError(error);
+			if (signIn) throw this.error(signIn.message, signIn.description);
+			if (this.isCancelled()) throw this.error('Execution was cancelled');
+			const status = (error as { httpCode?: unknown }).httpCode;
+			if (String(status) === '401') {
+				throw this.error(
+					'Downtify API error 401: the server still refuses the device token after signing in again',
+					'Check that the Base URL points directly to Downtify and that no proxy in front of it asks for its own authentication.',
+				);
+			}
+			const { message, description } = describeNetworkError(error, false);
+			throw this.error(`Sign-in to Downtify failed: ${message}`, description);
+		}
+		try {
+			const renewed = parseCredentials(await this.ctx.getCredentials(CREDENTIAL_NAME));
+			this.addSecrets(renewed);
+			this.credentials = renewed;
+		} catch (error) {
+			throw this.error((error as Error).message);
+		}
 	}
 
 	private assertInternalPath(path: string): void {
@@ -262,6 +246,8 @@ export class DowntifyClient {
 				options,
 			)) as typeof response;
 		} catch (error) {
+			const signIn = findSignInError(error);
+			if (signIn) throw this.error(signIn.message, signIn.description);
 			const e = error as { code?: string; message?: string; cause?: { code?: string; message?: string } };
 			const detail = `${e?.code ?? ''} ${e?.cause?.code ?? ''} ${e?.message ?? ''} ${e?.cause?.message ?? ''}`;
 			if (/ERR_RESPONSE_TOO_LARGE|maximum allowed size|maxContentLength/i.test(detail)) {
@@ -328,9 +314,12 @@ export class DowntifyClient {
 			const detail = errorDetail(parsed) || res.statusMessage.trim() || 'Request failed';
 			let hint: string | undefined;
 			if (res.statusCode === 401) {
-				hint = this.credentials.token
-					? 'The device token is wrong or was revoked (Settings > Apps in Downtify). Create a new one with POST /api/auth/token.'
-					: 'This server requires a device token: set one in the credential.';
+				hint =
+					this.credentials.mode === 'password'
+						? 'Downtify refused the device token n8n received when signing in. Check the credential and Settings > Apps in Downtify.'
+						: this.credentials.token
+							? 'The device token is wrong or was revoked (Settings > Apps in Downtify). Create a new one, or use Username & Password.'
+							: 'This server requires a device token: set one in the credential, or use Username & Password.';
 			} else if (res.statusCode === 403) {
 				hint = 'A device token cannot use this endpoint: it needs a signed-in browser or an admin.';
 			} else if (res.statusCode === 409) {

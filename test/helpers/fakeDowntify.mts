@@ -9,6 +9,19 @@ import type { AddressInfo } from 'node:net';
 
 export const TOKEN = 'dtfy_abcdefghjkmn_S3cr3tT0kenValue0123456789abcdefXYZ';
 
+/** Account of the fake server for POST /api/auth/token. */
+export const USERNAME = 'n8n';
+export const PASSWORD = 'Pa55-w0rd!secret';
+
+let issued = 0;
+
+/** A new device token in Downtify's format (dtfy_<12 chars a-z2-9>_<secret>). */
+function newDeviceToken(): string {
+	issued++;
+	const id = `n8ndevice${String(issued).padStart(3, '2').replace(/[01]/g, '2')}`.slice(-12).padStart(12, 'k');
+	return `dtfy_${id}_IssuedSecret${String(issued).padStart(4, '0')}abcdefghijklmnopqrstuvwxyz`;
+}
+
 export interface RecordedRequest {
 	method: string;
 	path: string;
@@ -77,6 +90,15 @@ export class FakeDowntify {
 
 	authDisabled = false;
 
+	/** Device tokens Downtify accepts (the fixed TOKEN plus the ones issued by sign-in). */
+	readonly tokens = new Set<string>([TOKEN]);
+
+	/** Tokens issued by POST /api/auth/token, in order. */
+	readonly issuedTokens: string[] = [];
+
+	/** POST /api/auth/token answers 409 (DOWNTIFY_DISABLE_AUTH / DISABLE_LOCAL_LOGIN). */
+	signInDisabled = false;
+
 	/** When false, GET /api/queue does not advance the jobs. */
 	advance = true;
 
@@ -121,6 +143,10 @@ export class FakeDowntify {
 		this.links.clear();
 		this.paused = false;
 		this.authDisabled = false;
+		this.tokens.clear();
+		this.tokens.add(TOKEN);
+		this.issuedTokens.length = 0;
+		this.signInDisabled = false;
 		this.advance = true;
 		this.albums = [];
 		this.shows = [];
@@ -194,7 +220,32 @@ export class FakeDowntify {
 		}
 	}
 
+	/** Revokes a device token (Settings > Apps > Revoke). */
+	revoke(token: string): void {
+		this.tokens.delete(token);
+	}
+
 	private installDefaults(): void {
+		this.on('POST', '/api/auth/token', (req) => {
+			if (this.signInDisabled || this.authDisabled) {
+				return { status: 409, json: { detail: 'Sign-in is turned off (DOWNTIFY_DISABLE_AUTH)' } };
+			}
+			const body = (req.json ?? {}) as Record<string, unknown>;
+			if (body.username !== USERNAME || body.password !== PASSWORD) {
+				return { status: 401, json: { detail: 'Wrong username or password' } };
+			}
+			const token = newDeviceToken();
+			this.tokens.add(token);
+			this.issuedTokens.push(token);
+			return {
+				json: {
+					token,
+					device: { id: token.split('_')[1], name: String(body.device_name ?? ''), platform: String(body.platform ?? '') },
+					server: { name: 'Downtify' },
+					user: { id: 2, username: USERNAME, role: 'user' },
+				},
+			};
+		});
 		this.on('GET', '/api/health', () => ({ json: { status: 'ok', version: '3.8.1' } }));
 		this.on('GET', '/api/version', () => ({ json: '3.8.1' }));
 		this.on('GET', '/api/me', () => ({
@@ -286,7 +337,7 @@ export class FakeDowntify {
 	private authorized(req: RecordedRequest): { status: number; detail: string } | null {
 		const auth = req.headers.authorization;
 		if (typeof auth === 'string' && auth.slice(0, 7).toLowerCase() === 'bearer ') {
-			return auth.slice(7).trim() === TOKEN ? null : { status: 401, detail: 'Invalid or revoked token' };
+			return this.tokens.has(auth.slice(7).trim()) ? null : { status: 401, detail: 'Invalid or revoked token' };
 		}
 		if (this.authDisabled) return null;
 		return { status: 401, detail: 'Sign in required' };
@@ -311,7 +362,7 @@ export class FakeDowntify {
 			res.end(payload);
 		};
 
-		const isPublic = ['/api/health', '/api/version'].includes(url.pathname);
+		const isPublic = ['/api/health', '/api/version', '/api/auth/token'].includes(url.pathname);
 		if (!isPublic) {
 			const denied = this.authorized(recorded);
 			if (denied) return send({ status: denied.status, json: { detail: denied.detail }, headers: { 'WWW-Authenticate': 'Bearer' } });

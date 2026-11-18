@@ -40,11 +40,30 @@ Create a **Downtify API** credential:
 
 | Field | Description |
 |---|---|
+| Authentication | **Username & Password** (default) or **Device Token** |
 | Base URL | Address of the Downtify server, for example `http://downtify.local:8000` or `https://music.example.com/downtify`. It must use http(s) and must not contain a user, query or fragment. Trailing slashes are removed. |
-| Device Token | A device token (`dtfy_…`), sent as `Authorization: Bearer`. Leave it empty only if Downtify runs with `DOWNTIFY_DISABLE_AUTH=true`. |
+| Username, Password | Username & Password only: a Downtify user |
+| Device Token | Device Token only: a device token (`dtfy_…`). Leave it empty only if Downtify runs with `DOWNTIFY_DISABLE_AUTH=true`. |
 
-The node never signs in with a username and password, because each sign-in creates a new paired
-device. Create the token **once** and store it in the credential:
+Every request carries a device token as `Authorization: Bearer`.
+
+**Username & Password.** n8n signs in once with `POST /api/auth/token` and stores the device
+token it receives in the credential. The token is kept encrypted with the credential and never
+sent to the browser. Later runs reuse it. n8n signs in again only when Downtify answers 401 (for
+example after the device was revoked) or after you change the Base URL, username or password.
+The stored token is sent only to the server and for the user it was issued for. Each sign-in
+adds a device named `n8n` in Downtify under Settings → Apps.
+
+**The Test button can add a new device each time.** In n8n 2.45 every credential test runs the
+sign-in step, and n8n tests the credential automatically each time you save it. The node keeps the
+stored token when Downtify still accepts it. But right after you create or change the credential,
+the form does not have the token yet, so each Save or Test there signs in again and adds one more
+`n8n` device. Revoke the devices you no longer use under Settings → Apps.
+
+If password sign-in is turned off on the server (`DOWNTIFY_DISABLE_AUTH`, or
+`DOWNTIFY_DISABLE_LOCAL_LOGIN` in newer versions), Downtify answers 409: use Device Token.
+
+**Device Token.** Use a token you already have, for example one created with:
 
 ```bash
 curl -s -X POST http://downtify.local:8000/api/auth/token \
@@ -52,16 +71,14 @@ curl -s -X POST http://downtify.local:8000/api/auth/token \
   -d '{"username":"n8n","password":"…","device_name":"n8n","platform":"n8n"}'
 ```
 
-The answer contains `token`. The device then shows up in Downtify under Settings → Apps, where you
-can revoke it.
-
 **Use a dedicated non-admin user for n8n.** A device token always has Downtify's *client* scope,
 but some lists depend on the user's role: with an admin user's token, the queue and podcast
 lists show every user's items. With a normal user, the node sees and triggers only on that
 user's downloads.
 
-The credential test calls `GET /api/me`. A 401 means the token is wrong or was revoked, or the
-server requires a token.
+The credential test calls `GET /api/me`. With Username & Password, a wrong username or password
+is reported by the sign-in step. With Device Token, a 401 means the token is wrong or was
+revoked, or the server requires a token.
 
 ## Node: Downtify
 
@@ -158,7 +175,10 @@ Example item for **Batch Finished**:
 ## Security
 
 - The token is sent only in the `Authorization: Bearer` header. It is never placed in a URL, and
-  it is removed from outputs, errors and messages.
+  it is removed from outputs, errors and messages. A token received by signing in is handled the
+  same way.
+- The password is sent only in the JSON body of `POST /api/auth/token`, never in a URL, output,
+  error or log. Sign-in errors are rebuilt without the original request.
 - No redirect is followed. Every request has a timeout and a response size limit (64 MiB),
   enforced by n8n's HTTP client without extra timers.
 - Values used in paths (track, show and episode IDs) are validated and encoded. Custom API Call

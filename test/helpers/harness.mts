@@ -1,7 +1,9 @@
 /**
  * Test harness: minimal IExecuteFunctions / IPollFunctions implementations.
  * HTTP requests go through the real n8n 2.45 request implementation (@n8n/backend-network
- * 1.19.0), after applying the credential's authenticate() exactly like n8n does.
+ * 1.19.0), after preAuthentication and authenticate() exactly like n8n 2.45 does. The
+ * `credentials` object of a run plays the stored credential: preAuthentication results are
+ * saved into it.
  */
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -19,7 +21,7 @@ import {
 import { DowntifyApi } from '../../credentials/DowntifyApi.credentials';
 import { Downtify } from '../../nodes/Downtify/Downtify.node';
 import { DowntifyTrigger } from '../../nodes/DowntifyTrigger/DowntifyTrigger.node';
-import { TOKEN, type FakeDowntify } from './fakeDowntify.mts';
+import { PASSWORD, TOKEN, USERNAME, type FakeDowntify } from './fakeDowntify.mts';
 
 const requireCjs = createRequire(import.meta.url);
 const { httpRequest } = requireCjs(
@@ -29,30 +31,141 @@ const { httpRequest } = requireCjs(
 export type Params = Record<string, unknown>;
 
 export function credentials(server: { url: string }, extra: IDataObject = {}): ICredentialDataDecryptedObject {
-	return { baseUrl: server.url, deviceToken: TOKEN, ...extra };
+	return { authentication: 'deviceToken', baseUrl: server.url, deviceToken: TOKEN, ...extra };
+}
+
+/** Username & Password credential, as stored by n8n (empty session token until the first sign-in). */
+export function passwordCredentials(server: { url: string }, extra: IDataObject = {}): ICredentialDataDecryptedObject {
+	return { authentication: 'password', baseUrl: server.url, username: USERNAME, password: PASSWORD, ...extra };
 }
 
 export const credentialType = new DowntifyApi();
 
 export const sentRequests: IHttpRequestOptions[] = [];
 
-/** Same flow as n8n-core: authenticate() then the outbound request; errors wrapped in NodeApiError. */
+/** Number of times n8n stored data returned by preAuthentication in the credential. */
+export const credentialSaves = { count: 0 };
+
+/** Credential data as n8n reads it from the database: a fresh copy with defaults applied. */
+export function readCredentials(stored: ICredentialDataDecryptedObject): ICredentialDataDecryptedObject {
+	const out: ICredentialDataDecryptedObject = {};
+	for (const prop of credentialType.properties) {
+		if (prop.type !== 'notice') out[prop.name] = prop.default as string;
+	}
+	return { ...out, ...stored };
+}
+
+/** The real outbound request of n8n 2.45 (redirect, timeout and size limits included). */
+async function outbound(options: IHttpRequestOptions): Promise<unknown> {
+	sentRequests.push(options);
+	return await httpRequest(options);
+}
+
+/**
+ * credentialsHelper.preAuthentication of n8n 2.45 (packages/cli credentials-helper.ts): runs the
+ * credential's preAuthentication when the expirable hidden field is empty, after a 401
+ * (expired) or for a credential test, and stores the result in the credential.
+ */
+async function preAuthentication(
+	stored: ICredentialDataDecryptedObject,
+	creds: ICredentialDataDecryptedObject,
+	node: INode,
+	expired: boolean,
+): Promise<ICredentialDataDecryptedObject | undefined> {
+	const expirable = credentialType.properties.find((p) => p.type === 'hidden' && p.typeOptions?.expirable === true);
+	if (expirable?.name === undefined) return undefined;
+	const isTestingCredentials = node.parameters?.temp === '' && node.type === 'n8n-nodes-base.noOp';
+	if (creds[expirable.name] === '' || expired || isTestingCredentials) {
+		const output = await credentialType.preAuthentication!.call({ helpers: { httpRequest: outbound } } as never, creds);
+		if (output[expirable.name] === undefined) return undefined;
+		if (node.credentials) {
+			Object.assign(stored, output);
+			credentialSaves.count++;
+			return Object.assign(creds, output);
+		}
+	}
+	return undefined;
+}
+
+/**
+ * httpRequestWithAuthentication of n8n-core 2.45: preAuthentication, authenticate(), the request,
+ * and once more preAuthentication(expired) + retry when the request throws with status 401.
+ * Errors are wrapped in NodeApiError.
+ */
 export async function httpRequestWithAuthentication(
 	node: INode,
-	creds: ICredentialDataDecryptedObject,
+	stored: ICredentialDataDecryptedObject,
 	options: IHttpRequestOptions,
+	credentialsDecrypted?: ICredentialDataDecryptedObject,
 ): Promise<unknown> {
 	const authenticate = credentialType.authenticate as (
 		c: ICredentialDataDecryptedObject,
 		o: IHttpRequestOptions,
 	) => Promise<IHttpRequestOptions>;
-	const authed = await authenticate(creds, { ...options });
-	sentRequests.push(authed);
+	let creds: ICredentialDataDecryptedObject | undefined;
 	try {
-		return await httpRequest(authed);
+		creds = credentialsDecrypted ?? readCredentials(stored);
+		const data = await preAuthentication(stored, creds, node, false);
+		if (data) Object.assign(creds, data);
+		return await outbound(await authenticate(creds, { ...options }));
 	} catch (error) {
+		if (creds !== undefined && (error as { response?: { status?: number } }).response?.status === 401) {
+			try {
+				const data = await preAuthentication(stored, creds, node, true);
+				if (data) Object.assign(creds, data);
+				return await outbound(await authenticate(creds, { ...options }));
+			} catch (retryError) {
+				throw new NodeApiError(node, retryError as JsonObject);
+			}
+		}
 		throw new NodeApiError(node, error as JsonObject);
 	}
+}
+
+/** Node used by n8n's credential test (CredentialsTester.runRequestTest, after Workflow defaults). */
+const TEST_NODE: INode = {
+	id: 'temp',
+	name: 'Temp-Node',
+	type: 'n8n-nodes-base.noOp',
+	typeVersion: 1,
+	position: [0, 0],
+	parameters: { temp: '' },
+	credentials: { downtifyApi: { id: '1', name: 'Downtify' } },
+};
+
+/**
+ * The Test button of n8n 2.45: the declarative test request through httpRequestWithAuthentication
+ * with the form data (default: the stored data), then the responseCode rules, else the message.
+ */
+export async function runCredentialTest(
+	stored: ICredentialDataDecryptedObject,
+	form: ICredentialDataDecryptedObject = readCredentials(stored),
+): Promise<{ status: 'OK' | 'Error'; message: string }> {
+	const req = credentialType.test.request;
+	const options: IHttpRequestOptions = {
+		baseURL: String(evalCredentialExpression(req.baseURL, form)),
+		url: String(req.url),
+		method: req.method,
+		headers: req.headers as Record<string, string>,
+		disableFollowRedirect: req.disableFollowRedirect,
+		timeout: 5000,
+	};
+	try {
+		await httpRequestWithAuthentication(TEST_NODE, stored, options, { ...form });
+	} catch (error) {
+		const e = error as Error & { cause?: { response?: { status: number; statusText?: string }; code?: string } };
+		if (e.cause?.response) {
+			const status = e.cause.response.status;
+			const rule = credentialType.test.rules?.find(
+				(r) => r.type === 'responseCode' && (r.properties as { value: number }).value === status,
+			);
+			if (rule) return { status: 'Error', message: (rule.properties as { message: string }).message };
+			return { status: 'Error', message: e.cause.response.statusText || `Received HTTP status code: ${status}` };
+		}
+		if (e.cause?.code) return { status: 'Error', message: e.cause.code };
+		return { status: 'Error', message: String(e.message) };
+	}
+	return { status: 'OK', message: 'Connection successful!' };
 }
 
 export { httpRequest };
@@ -68,6 +181,7 @@ export const NODE: INode = {
 	typeVersion: 1,
 	position: [0, 0],
 	parameters: {},
+	credentials: { downtifyApi: { id: '1', name: 'Downtify' } },
 };
 
 export interface RunOptions {
@@ -85,7 +199,7 @@ export async function runNode(opts: RunOptions): Promise<INodeExecutionData[]> {
 	const ctx = {
 		getInputData: () => items,
 		getNode: () => NODE,
-		getCredentials: async () => opts.credentials,
+		getCredentials: async () => readCredentials(opts.credentials),
 		continueOnFail: () => opts.continueOnFail === true,
 		getExecutionCancelSignal: () => opts.cancelSignal,
 		getNodeParameter: (name: string, i: number, fallback?: unknown) => getParam(paramsFor(i), name, fallback),
@@ -125,7 +239,7 @@ export async function poll(opts: PollOptions): Promise<IDataObject[] | null> {
 	const ctx = {
 		getNode: () => ({ ...NODE, name: 'Downtify Trigger', type: 'n8n-nodes-downtify.downtifyTrigger' }),
 		getMode: () => opts.mode ?? 'trigger',
-		getCredentials: async () => opts.credentials,
+		getCredentials: async () => readCredentials(opts.credentials),
 		getWorkflowStaticData: () => opts.staticData,
 		getNodeParameter: (name: string, fallback?: unknown) => getParam(opts.params, name, fallback),
 		helpers: {
