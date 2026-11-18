@@ -1,18 +1,18 @@
 # n8n-nodes-downtify
 
 n8n community nodes for [Downtify](https://github.com/henriquesebastiao/downtify), a self-hosted
-music downloader. Queue Spotify, Deezer, YouTube Music and SoundCloud links and wait for the
-files. You can also read the queue, library, Playlist Monitor and podcasts, and start workflows
-when downloads finish.
+music downloader. The node queues Spotify, Deezer, YouTube Music and SoundCloud links and waits
+for the files. It also reads the queue, the library, the Playlist Monitor and podcasts. The
+trigger starts workflows when downloads finish.
 
-Requires n8n 2.45.0 or later. Downtify versions checked: **3.8.1** (tested) and **3.11.0** (the
-routes and handlers used by these nodes are unchanged).
+Requires n8n 2.45.0 or later. Checked against Downtify 3.8.1 (tested) and 3.11.0 (the routes and
+handlers used here are unchanged).
 
-> This project is not affiliated with or endorsed by Downtify or its authors.
+This project is not affiliated with or endorsed by Downtify or its authors.
 
 ## Installation
 
-**From npm:** Settings → Community Nodes → Install → `n8n-nodes-downtify`.
+From npm: Settings → Community Nodes → Install → `n8n-nodes-downtify`.
 
 ### Manual installation (Docker)
 
@@ -36,34 +36,43 @@ docker restart n8n
 
 ## Credentials
 
-Create a **Downtify API** credential:
+Create a Downtify API credential:
 
 | Field | Description |
 |---|---|
-| Authentication | **Username & Password** (default) or **Device Token** |
-| Base URL | Address of the Downtify server, for example `http://downtify.local:8000` or `https://music.example.com/downtify`. It must use http(s) and must not contain a user, query or fragment. Trailing slashes are removed. |
-| Username, Password | Username & Password only: a Downtify user |
-| Device Token | Device Token only: a device token (`dtfy_…`). Leave it empty only if Downtify runs with `DOWNTIFY_DISABLE_AUTH=true`. |
+| Authentication | Username & Password (default) or Device Token |
+| Base URL | Address of the Downtify server, for example `http://downtify.local:8000` or `https://music.example.com/downtify`. http or https only, without user, query or fragment. Trailing slashes are removed. |
+| Username, Password | Username & Password only. A Downtify user. |
+| Device Token | Device Token only. A device token (`dtfy_…`). Leave it empty only if Downtify runs with `DOWNTIFY_DISABLE_AUTH=true`. |
 
-Every request carries a device token as `Authorization: Bearer`.
+Every request carries a device token in the `Authorization: Bearer` header.
 
-**Username & Password.** n8n signs in once with `POST /api/auth/token` and stores the device
-token it receives in the credential. The token is kept encrypted with the credential and never
-sent to the browser. Later runs reuse it. n8n signs in again only when Downtify answers 401 (for
-example after the device was revoked) or after you change the Base URL, username or password.
-The stored token is sent only to the server and for the user it was issued for. Each sign-in
-adds a device named `n8n` in Downtify under Settings → Apps.
+### Username & Password
 
-**The Test button can add a new device each time.** In n8n 2.45 every credential test runs the
-sign-in step, and n8n tests the credential automatically each time you save it. The node keeps the
-stored token when Downtify still accepts it. But right after you create or change the credential,
-the form does not have the token yet, so each Save or Test there signs in again and adds one more
-`n8n` device. Revoke the devices you no longer use under Settings → Apps.
+n8n signs in once with `POST /api/auth/token` and stores the device token in the credential. The
+token is encrypted with the credential and is not sent to the browser. Later runs reuse it.
+
+n8n signs in again only in these cases:
+
+- Downtify answers 401, for example after the device was revoked;
+- the Base URL, username or password changed. The stored token is sent only to the server and
+  for the user it was issued for.
+
+Each sign-in adds a device named `n8n` in Downtify under Settings → Apps.
+
+The Test button can add a new device each time. In n8n 2.45 every credential test runs the
+sign-in step, and n8n tests the credential each time you save it. The node keeps the stored token
+while Downtify accepts it. Right after you create or change the credential, the form does not
+have the token yet, so each Save or Test signs in again and adds a device. Revoke unused devices
+under Settings → Apps.
 
 If password sign-in is turned off on the server (`DOWNTIFY_DISABLE_AUTH`, or
-`DOWNTIFY_DISABLE_LOCAL_LOGIN` in newer versions), Downtify answers 409: use Device Token.
+`DOWNTIFY_DISABLE_LOCAL_LOGIN` in newer versions), Downtify answers 409. Use Device Token
+instead.
 
-**Device Token.** Use a token you already have, for example one created with:
+### Device Token
+
+Use a token you already have. For example, create one with:
 
 ```bash
 curl -s -X POST http://downtify.local:8000/api/auth/token \
@@ -71,14 +80,17 @@ curl -s -X POST http://downtify.local:8000/api/auth/token \
   -d '{"username":"n8n","password":"…","device_name":"n8n","platform":"n8n"}'
 ```
 
-**Use a dedicated non-admin user for n8n.** A device token always has Downtify's *client* scope,
-but some lists depend on the user's role: with an admin user's token, the queue and podcast
-lists show every user's items. With a normal user, the node sees and triggers only on that
-user's downloads.
+### Which user
 
-The credential test calls `GET /api/me`. With Username & Password, a wrong username or password
-is reported by the sign-in step. With Device Token, a 401 means the token is wrong or was
-revoked, or the server requires a token.
+Use a dedicated non-admin user for n8n. A device token always has Downtify's client scope, but
+some lists depend on the user's role. With an admin user's token, the queue and podcast lists show
+every user's items. With a normal user, the node sees and triggers only on that user's downloads.
+
+### Credential test
+
+The test calls `GET /api/me`. With Username & Password, a wrong username or password is reported
+by the sign-in step. With Device Token, a 401 means the token is wrong or was revoked, or the
+server requires a token.
 
 ## Node: Downtify
 
@@ -87,35 +99,38 @@ the queue, deletes files, changes settings or manages users.
 
 | Resource | Operations |
 |---|---|
-| Download | **Download URL**: resolve a track, album or playlist link, queue its tracks and wait for them |
+| Download | Download URL: resolve a track, album or playlist link, queue its tracks and wait for them |
 | Queue | Get Many (status filter), Get State |
-| Resolve & Search | Resolve URL, Search Songs, Search (finder: songs, albums, artists), Get Artist Albums (with album/EP/single/compilation type) |
-| Library | Get Summary, Get Albums, Get Artists, Get Tracks (artist/album/playlist/text filters), Get Track, Get Playlists, **Find Album** (is an artist + title already in the library?) |
+| Resolve & Search | Resolve URL, Search Songs, Search (finder: songs, albums, artists), Get Artist Albums (album, EP, single, compilation) |
+| Library | Get Summary, Get Albums, Get Artists, Get Tracks (artist, album, playlist and text filters), Get Track, Get Playlists, Find Album (checks whether an artist and title are in the library) |
 | Playlist Monitor | Get Many (read-only) |
-| Podcast | Get Shows, Get Show, Get Episodes, Search, Resolve (preview), **Download Episode** |
+| Podcast | Get Shows, Get Show, Get Episodes, Search, Resolve (preview), Download Episode |
 | Server | Health, Version, Get Me |
 | Custom API Call | Method, relative path, query and JSON body. Only device-token endpoints are allowed. |
 
-Lists support **Return All / Limit** and **Split Into Items** (one item per entry, on by default).
-Errors carry Downtify's own message. With *Continue On Fail* the failing item returns `{ error }`.
+Download URL and Download Episode make Downtify download files to its library. All other
+operations only read data.
+
+Lists support Return All / Limit and Split Into Items (one item per entry, on by default).
+Errors carry Downtify's own message. With Continue On Fail the failing item returns `{ error }`.
 
 ### Download URL
 
 Download URL calls `GET /api/url/resolve`, then queues the tracks with
-`POST /api/download/batch`. For playlists, it sends the playlist link, so Downtify uses a playlist
-folder and, if **Generate M3U** is on, an M3U file. Artist links are refused: use **Get Artist
-Albums** and download an album link instead.
+`POST /api/download/batch`. For a playlist it sends the playlist link, so Downtify uses a
+playlist folder and, with Generate M3U on, writes an M3U file. Artist links are refused. Use Get
+Artist Albums and download an album link instead.
 
-| Option | Default | |
+| Option | Default | Description |
 |---|---|---|
 | Wait For Completion | on | Poll the queue until every job of this request has finished |
-| Poll Interval / Timeout | 5 s / 3600 s | Minimum 1 s, maximum 24 h (also from expressions). The timeout covers retries too. |
+| Poll Interval / Timeout | 5 s / 3600 s | Minimum 1 s, maximum 24 h, also from expressions. The timeout includes retries. |
 | Retry Failed Tracks | 1 | Queue failed tracks again this many times (0–5) |
-| Fail On Error | on | If off, the summary is returned with failed and pending tracks |
-| Skip If In Library | off | Albums only: queue nothing if Find Album finds the album; the summary has `skipped: true` |
+| Fail On Error | on | If off, the summary is returned with the failed and pending tracks |
+| Skip If In Library | off | Albums only. Queue nothing if Find Album finds the album; the summary has `skipped: true`. |
 
 The node follows only the job IDs that Downtify returns for this request. In Downtify a job ID is
-the track's ID. A finished job with the same ID is restarted, and a job that is still running is
+the track's ID. A finished job with the same ID is restarted. A job that is still running is
 shared with this request. Output:
 
 ```json
@@ -128,40 +143,44 @@ shared with this request. Output:
 ```
 
 `status` is `completed`, `completedWithErrors`, `queued` (no waiting), `timeout`, `paused` or
-`skipped`. After a timeout, the downloads keep running in Downtify.
+`skipped`. After a timeout the downloads keep running in Downtify.
 
-**"Download again if the file exists"** (Downtify settings): when it is **on** (the Downtify
-default), every track is downloaded again and overwrites the existing file, so `alreadyPresent`
-stays 0. When it is **off**, Downtify does not download tracks that are already in the library
-and counts them as `alreadyPresent` (`existingFiles`). Use **Skip If In Library** to skip a whole
-album without queueing anything.
+The Downtify setting "Download again if the file exists" changes the result:
 
-**Paused queue:** a device token cannot resume the queue. If the queue is paused before the
-tracks are queued, Download URL and Download Episode fail with a clear message. If it is paused
-while the node waits, Download URL fails too, or returns `status: paused` when Fail On Error is
-off. An admin must resume the queue in the Downtify web interface.
+- on (Downtify default): every track is downloaded again and overwrites the existing file, so
+  `alreadyPresent` stays 0;
+- off: tracks already in the library are not downloaded and are counted in `alreadyPresent`
+  (`existingFiles`).
+
+To skip a whole album without queueing anything, use Skip If In Library.
+
+A device token cannot resume a paused queue. If the queue is paused before the tracks are queued,
+Download URL and Download Episode fail with an error that says so. If it is paused while the node
+waits, Download URL fails, or returns `status: paused` when Fail On Error is off. An admin must
+resume the queue in the Downtify web interface.
 
 ### Download Episode
 
-Downtify answers only after the episode is saved. **Timeout** (default 1 h, max 24 h) limits
-the wait.
+Downtify answers only after the episode is saved. Timeout (default 1 h, maximum 24 h) limits the
+wait.
 
 ## Trigger: Downtify Trigger
 
-Polling trigger. The first run records the current state without firing. In test mode the
+Polling trigger. The first run records the current state and fires nothing. In test mode the
 trigger returns a real sample.
 
 | Event | Fires when |
 |---|---|
-| Download Finished | A track job ends `done` (filters: artist, album; optionally without already present tracks) |
+| Download Finished | A track job ends `done`. Filters: artist, album, and optionally without already present tracks. |
 | Download Failed | A track job ends `error`, with Downtify's message |
-| Batch Finished | Every job of an album in the queue has finished (album title + album artist); with downloaded, already present and failed counts |
-| New Podcast Episode Downloaded | An episode of a subscribed show gets a file (filter: show IDs; max shows read per poll) |
+| Batch Finished | Every job of an album in the queue has finished (album title and album artist), with downloaded, already present and failed counts |
+| New Podcast Episode Downloaded | An episode of a subscribed show gets a file. Filter: show IDs; maximum shows read per poll. |
 
-Events are deduplicated by job ID + status. When a track is queued again, a new event fires when
-it finishes. The trigger only sees what is in Downtify's queue and remembers up to 10,000 entries.
+Events are deduplicated by job ID and status. When a track is queued again, a new event fires
+when it finishes. The trigger only sees what is in Downtify's queue and keeps up to 10,000
+entries.
 
-Example item for **Batch Finished**:
+Example item for Batch Finished:
 
 ```json
 {
@@ -174,17 +193,17 @@ Example item for **Batch Finished**:
 
 ## Security
 
-- The token is sent only in the `Authorization: Bearer` header. It is never placed in a URL, and
-  it is removed from outputs, errors and messages. A token received by signing in is handled the
-  same way.
-- The password is sent only in the JSON body of `POST /api/auth/token`, never in a URL, output,
-  error or log. Sign-in errors are rebuilt without the original request.
+- The device token is sent only in the `Authorization: Bearer` header, never in a URL. It is
+  removed from outputs, errors and messages. A token received by signing in is handled the same
+  way.
+- The password is sent only in the JSON body of `POST /api/auth/token`. It never appears in a
+  URL, output, error or log. Sign-in errors are rebuilt without the original request.
 - No redirect is followed. Every request has a timeout and a response size limit (64 MiB),
   enforced by n8n's HTTP client without extra timers.
 - Values used in paths (track, show and episode IDs) are validated and encoded. Custom API Call
-  refuses absolute URLs, path traversal (also percent-encoded) and endpoints that need an admin
-  or a browser.
-- Poll interval, timeout, retries, limits and shows per poll are checked even when set by
+  refuses absolute URLs, path traversal (also percent-encoded), sign-in and pairing routes, and
+  endpoints that need an admin or a browser.
+- Poll interval, timeout, retries, limits and shows per poll are checked also when set by
   expressions. Trigger state is bounded.
 - No runtime dependencies.
 
